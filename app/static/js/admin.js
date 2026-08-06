@@ -34,11 +34,16 @@ document.getElementById("create-backdrop").addEventListener("click", closeDrawer
 async function loadStats() {
   const s = await API.get("/api/admin/dashboard");
   const t = s.today;
+  const pct = Math.min(t.percentage, 100);
   document.getElementById("metrics").innerHTML = `
     <div class="metric accent"><div class="value">${t.enrolled}</div><div class="label">Enrolled</div></div>
     <div class="metric green"><div class="value">${t.present}<small> / ${t.enrolled}</small></div><div class="label">Present today</div></div>
     <div class="metric red"><div class="value">${t.absent}</div><div class="label">Absent today</div></div>
-    <div class="metric"><div class="value">${t.percentage}<small>%</small></div><div class="label">Attendance</div></div>
+    <div class="metric">
+      <div class="value">${t.percentage}<small>%</small></div>
+      <div class="label">Attendance today</div>
+      <div class="bar mt-8"><i style="width: ${pct}%"></i></div>
+    </div>
     <div class="metric"><div class="value">${t.sessions}</div><div class="label">Sessions today</div></div>
   `;
 }
@@ -49,7 +54,8 @@ async function loadSessions() {
   const params = new URLSearchParams();
   if (date) params.set("session_date", date);
   if (subject) params.set("subject", subject);
-  const sessions = await API.get(`/api/admin/sessions?${params.toString()}`);
+  const data = await API.get(`/api/admin/sessions?${params.toString()}`);
+  const sessions = data.sessions || [];
   const body = document.getElementById("sessions-body");
   body.innerHTML = sessions.length
     ? ""
@@ -94,8 +100,50 @@ async function loadStudents() {
   const el = document.getElementById("students-list");
   document.getElementById("students-count").textContent = `${students.length} student${students.length === 1 ? "" : "s"}`;
   el.innerHTML = students.length
-    ? students.map((s) => `<span>${esc(s.name)} — <span class="faint">${esc(s.email)}</span></span><br/>`).join("")
+    ? students
+        .map(
+          (s) =>
+            `<div class="flex between" style="padding: 6px 0;">
+              <span><span style="font-weight:600;">${esc(s.name)}</span> <span class="faint small">${esc(s.email)}</span></span>
+              <button class="icon-btn sm" title="Remove ${esc(s.name)}" onclick="removeStudent(${s.id}, this)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+            </div>`
+        )
+        .join("")
     : "No students found";
+}
+
+async function addStudent(e) {
+  e.preventDefault();
+  const form = e.target;
+  const msgEl = document.getElementById("students-msg");
+  msgEl.classList.add("hidden");
+  try {
+    await API.post("/api/admin/students", {
+      name: form.name.value.trim(),
+      email: form.email.value.trim(),
+      password: form.password.value,
+    });
+    form.reset();
+    showToast("Student added", "ok");
+    await loadStudents();
+  } catch (err) {
+    showAlert(msgEl, "err", err.message);
+  }
+}
+
+async function removeStudent(id, btn) {
+  if (!confirm("Remove this student? Their attendance records will be deleted.")) return;
+  btn.disabled = true;
+  try {
+    await API.request("DELETE", `/api/admin/students/${id}`);
+    showToast("Student removed", "ok");
+    await loadStudents();
+  } catch (err) {
+    showToast(err.message, "err");
+    btn.disabled = false;
+  }
 }
 
 // ---------- QR ----------
@@ -140,7 +188,8 @@ function showQr(id, subject) {
 
   // Re-query the session so qr_expires_at is fresh when reopening a row.
   // NOTE: never send empty query params — FastAPI 422s on empty date strings.
-  API.get("/api/admin/sessions").then((sessions) => {
+  API.get("/api/admin/sessions").then((data) => {
+    const sessions = data.sessions || [];
     const s = sessions.find((x) => x.id === id);
     paint(s ? s.qr_expires_at : null);
   }).catch(() => paint(null));
@@ -227,6 +276,7 @@ function debounce(fn, ms) {
 
 document.getElementById("create-btn").addEventListener("click", openDrawer);
 document.getElementById("create-form").addEventListener("submit", handleCreate);
+document.getElementById("add-student-form").addEventListener("submit", addStudent);
 document.getElementById("filter-btn").addEventListener("click", loadSessions);
 document.getElementById("export-btn").addEventListener("click", () => {
   const date = document.getElementById("filter-date").value;

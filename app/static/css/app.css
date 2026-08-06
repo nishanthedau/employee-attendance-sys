@@ -87,6 +87,7 @@ a:hover { text-decoration: underline; }
   display: grid; place-items: center; transition: all 0.15s ease;
 }
 .icon-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.icon-btn.sm { width: 26px; height: 26px; border-radius: 7px; }
 
 /* ---------- Layout ---------- */
 .container { max-width: 1040px; margin: 0 auto; padding: 32px 24px 80px; }
@@ -116,6 +117,8 @@ a:hover { text-decoration: underline; }
 .metric .value { font-size: 28px; font-weight: 700; letter-spacing: -0.8px; line-height: 1; }
 .metric .value small { font-size: 14px; color: var(--text-muted); font-weight: 500; }
 .metric .label { color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; margin-top: 8px; }
+.metric .bar { height: 5px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.metric .bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--success)); transition: width 0.4s ease; }
 
 /* ---------- Buttons ---------- */
 .btn {

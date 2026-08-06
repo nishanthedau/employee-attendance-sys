@@ -1,0 +1,51 @@
+from app.models.entities import Role
+from app.services.auth_service import create_user
+
+
+def make_user(db, name="Student", email="stu@campus.edu", role=Role.student):
+    return create_user(db, name, email, "secret123", role)
+
+
+def login(client, email, password="secret123"):
+    return client.post("/api/auth/login", json={"email": email, "password": password})
+
+
+def test_login_success(client, db_session):
+    make_user(db_session)
+    res = login(client, "stu@campus.edu")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["token"]
+    assert body["user"]["role"] == "student"
+
+
+def test_login_wrong_password(client, db_session):
+    make_user(db_session)
+    res = client.post("/api/auth/login", json={"email": "stu@campus.edu", "password": "nope"})
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Invalid email or password"
+
+
+def test_login_invalid_email_rejected(client, db_session):
+    res = client.post("/api/auth/login", json={"email": "not-an-email", "password": "x"})
+    assert res.status_code == 422
+
+
+def test_login_email_case_insensitive(client, db_session):
+    make_user(db_session)
+    res = login(client, "STU@CAMPUS.EDU")
+    assert res.status_code == 200
+
+
+def test_protected_route_without_token(client):
+    res = client.get("/api/student/attendance/current-week")
+    assert res.status_code == 401
+
+
+def test_logout_revokes_token(client, db_session):
+    make_user(db_session)
+    token = login(client, "stu@campus.edu").json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/student/attendance/current-week", headers=headers).status_code == 200
+    assert client.post("/api/auth/logout", headers=headers).status_code == 200
+    assert client.get("/api/student/attendance/current-week", headers=headers).status_code == 401

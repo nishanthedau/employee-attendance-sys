@@ -1,11 +1,16 @@
 from datetime import date, time
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class LoginRequest(BaseModel):
-    email: str = Field(min_length=3, max_length=190)
+    email: EmailStr
     password: str = Field(min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def normalize(self):
+        self.email = self.email.lower().strip()
+        return self
 
 
 class TokenResponse(BaseModel):
@@ -25,9 +30,27 @@ class SessionCreateRequest(BaseModel):
     qr_expiry_minutes: int = Field(gt=0, le=1440, default=3)
 
     @model_validator(mode="after")
-    def check_times(self):
+    def clean_and_check(self):
+        self.subject = self.subject.strip()
+        self.faculty = self.faculty.strip()
+        if not self.subject or not self.faculty:
+            raise ValueError("subject and faculty cannot be blank")
         if self.start_time >= self.end_time:
             raise ValueError("start_time must be before end_time")
+        return self
+
+
+class StudentCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=255)
+
+    @model_validator(mode="after")
+    def normalize(self):
+        self.name = self.name.strip()
+        self.email = self.email.lower().strip()
+        if not self.name:
+            raise ValueError("name cannot be blank")
         return self
 
 

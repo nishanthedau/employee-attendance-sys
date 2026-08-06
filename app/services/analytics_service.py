@@ -4,8 +4,8 @@ import csv
 import io
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import case, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.entities import AttendanceRecord, AttendanceSession, User
 
@@ -31,6 +31,7 @@ def dashboard_stats(db: Session, today: date | None = None) -> dict:
     recent = (
         db.execute(
             select(AttendanceSession)
+            .options(selectinload(AttendanceSession.records))
             .order_by(AttendanceSession.created_at.desc())
             .limit(10)
         )
@@ -40,8 +41,9 @@ def dashboard_stats(db: Session, today: date | None = None) -> dict:
 
     activity = (
         db.execute(
-            select(AttendanceRecord, User)
+            select(AttendanceRecord, User, AttendanceSession)
             .join(User, AttendanceRecord.student_id == User.id)
+            .join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id)
             .order_by(AttendanceRecord.scan_time.desc())
             .limit(10)
         )
@@ -76,8 +78,7 @@ def dashboard_stats(db: Session, today: date | None = None) -> dict:
                 "time": r.scan_time.strftime("%Y-%m-%d %H:%M:%S"),
                 "status": r.status,
             }
-            for r, u in activity
-            for s in [db.get(AttendanceSession, r.session_id)]
+            for r, u, s in activity
         ],
     }
 
@@ -111,7 +112,19 @@ def export_csv(db: Session, subject: str | None = None, day: date | None = None)
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
-        ["scan_time", "student", "email", "subject", "faculty", "date", "start", "end", "latitude", "longitude", "status"]
+        [
+            "scan_time",
+            "student",
+            "email",
+            "subject",
+            "faculty",
+            "date",
+            "start",
+            "end",
+            "latitude",
+            "longitude",
+            "status",
+        ]
     )
     for row in rows:
         writer.writerow(

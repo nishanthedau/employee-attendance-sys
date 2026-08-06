@@ -1,52 +1,61 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_admin
-from app.api.schemas import SessionCreateRequest
+from app.api.schemas import SessionCreateRequest, StudentCreateRequest
+from app.core.time import local_iso
 from app.db.database import get_db
 from app.models.entities import AttendanceRecord, AttendanceSession, Role, User
 from app.services.analytics_service import dashboard_stats, export_csv, subject_options
+from app.services.auth_service import create_user
 from app.services.qr_service import render_session_qr
-from app.services.session_service import SessionError, CreateSessionData, validate_and_create
+from app.services.session_service import CreateSessionData, validate_and_create
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-@router.post("/attendance/create")
-def create_session(payload: SessionCreateRequest, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
-    try:
-        session = validate_and_create(
-            db,
-            CreateSessionData(
-                subject=payload.subject,
-                faculty=payload.faculty,
-                session_date=payload.date,
-                start_time=payload.start_time,
-                end_time=payload.end_time,
-                latitude=payload.latitude,
-                longitude=payload.longitude,
-                radius_meters=payload.radius_meters,
-                qr_expiry_minutes=payload.qr_expiry_minutes,
-            ),
-            admin,
-        )
-    except SessionError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+def _session_dict(s: AttendanceSession) -> dict:
     return {
-        "id": session.id,
-        "subject": session.subject,
-        "faculty": session.faculty,
-        "date": session.date.isoformat(),
-        "start_time": session.start_time.strftime("%H:%M"),
-        "end_time": session.end_time.strftime("%H:%M"),
-        "latitude": session.latitude,
-        "longitude": session.longitude,
-        "radius_meters": session.radius_meters,
-        "qr_expires_at": session.expires_at.isoformat(),
+        "id": s.id,
+        "subject": s.subject,
+        "faculty": s.faculty,
+        "date": s.date.isoformat(),
+        "start_time": s.start_time.strftime("%H:%M"),
+        "end_time": s.end_time.strftime("%H:%M"),
+        "latitude": s.latitude,
+        "longitude": s.longitude,
+        "radius_meters": s.radius_meters,
+        "marked": len(s.records),
+        "qr_expires_at": local_iso(s.expires_at),
     }
+
+
+@router.post("/attendance/create")
+def create_session(
+    payload: SessionCreateRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    session = validate_and_create(
+        db,
+        CreateSessionData(
+            subject=payload.subject,
+            faculty=payload.faculty,
+            session_date=payload.date,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            radius_meters=payload.radius_meters,
+            qr_expiry_minutes=payload.qr_expiry_minutes,
+        ),
+        admin,
+    )
+    return _session_dict(session)
 
 
 @router.get("/attendance/qr")
@@ -70,29 +79,29 @@ def dashboard(admin: User = Depends(require_admin), db: Session = Depends(get_db
 def list_sessions(
     subject: str | None = Query(default=None),
     session_date: date | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    query = select(AttendanceSession)
+    query = select(AttendanceSession).options(selectinload(AttendanceSession.records))
     if subject:
         query = query.where(AttendanceSession.subject == subject)
     if session_date:
         query = query.where(AttendanceSession.date == session_date)
-    sessions = db.execute(query.order_by(AttendanceSession.date.desc())).scalars().all()
-    return [
-        {
-            "id": s.id,
-            "subject": s.subject,
-            "faculty": s.faculty,
-            "date": s.date.isoformat(),
-            "start_time": s.start_time.strftime("%H:%M"),
-            "end_time": s.end_time.strftime("%H:%M"),
-            "marked": len(s.records),
-            "radius_meters": s.radius_meters,
-            "qr_expires_at": s.expires_at.isoformat(),
-        }
-        for s in sessions
-    ]
+    total = db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
+    sessions = (
+        db.execute(query.order_by(AttendanceSession.date.desc(), AttendanceSession.id.desc())
+                   .limit(limit).offset(offset))
+        .scalars()
+        .all()
+    )
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "sessions": [_session_dict(s) for s in sessions],
+    }
 
 
 @router.get("/subjects")
@@ -137,12 +146,40 @@ def history(
 
 
 @router.get("/students")
-def list_students(q: str | None = Query(default=None), admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+def list_students(
+    q: str | None = Query(default=None),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     query = select(User).where(User.role == Role.student)
     if q:
         query = query.where(User.name.like(f"%{q}%") | User.email.like(f"%{q}%"))
-    students = db.execute(query.order_by(User.name).limit(50)).scalars().all()
+    students = db.execute(query.order_by(User.name).limit(200)).scalars().all()
     return [{"id": u.id, "name": u.name, "email": u.email} for u in students]
+
+
+@router.post("/students")
+def add_student(
+    payload: StudentCreateRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    try:
+        user = create_user(db, payload.name, payload.email, payload.password, Role.student)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A user with this email already exists") from None
+    return {"id": user.id, "name": user.name, "email": user.email}
+
+
+@router.delete("/students/{student_id}")
+def remove_student(student_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    user = db.get(User, student_id)
+    if not user or user.role != Role.student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    db.delete(user)
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/export")

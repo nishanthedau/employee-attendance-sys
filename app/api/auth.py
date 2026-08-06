@@ -1,25 +1,21 @@
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import LOGIN_LIMIT, enforce_rate_limit, get_current_user
 from app.api.schemas import LoginRequest, TokenResponse
 from app.db.database import get_db
-from app.services.auth_service import (
-    AuthError,
-    authenticate,
-    issue_token,
-    revoke_token,
-)
+from app.services.auth_service import authenticate, issue_token, revoke_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    try:
-        user = authenticate(db, payload.email, payload.password)
-    except AuthError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+def login(
+    payload: LoginRequest,
+    db: Session = Depends(get_db),
+    _rate: None = Depends(enforce_rate_limit(LOGIN_LIMIT)),
+):
+    user = authenticate(db, payload.email, payload.password)
     token = issue_token(db, user)
     return TokenResponse(token=token, user=user.public_dict())
 

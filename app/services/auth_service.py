@@ -1,13 +1,13 @@
 """Authentication: opaque bearer tokens stored in the auth_tokens table."""
 
 import secrets
-import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import bcrypt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.time import now
 from app.models.entities import AuthToken, Role, User
 
 TOKEN_TTL_HOURS = 12
@@ -30,14 +30,27 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+def create_user(db: Session, name: str, email: str, password: str, role: Role) -> User:
+    user = User(
+        name=name,
+        email=email.lower(),
+        password_hash=hash_password(password),
+        role=role,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def issue_token(db: Session, user: User) -> str:
     token = secrets.token_hex(32)
     db.add(
         AuthToken(
             user_id=user.id,
             token=token,
-            created_at=datetime.now(),
-            expires_at=datetime.now() + timedelta(hours=TOKEN_TTL_HOURS),
+            created_at=now(),
+            expires_at=now() + timedelta(hours=TOKEN_TTL_HOURS),
         )
     )
     db.commit()
@@ -54,7 +67,7 @@ def authenticate(db: Session, email: str, password: str) -> User:
 def get_user_by_token(db: Session, token: str) -> User | None:
     record = (
         db.execute(
-            select(AuthToken).where(AuthToken.token == token, AuthToken.expires_at > datetime.now())
+            select(AuthToken).where(AuthToken.token == token, AuthToken.expires_at > now())
         )
         .scalar_one_or_none()
     )

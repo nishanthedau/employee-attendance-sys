@@ -1,11 +1,23 @@
 """FastAPI dependencies: current-user resolution from bearer token."""
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.core.rate_limit import RateLimiter
 from app.db.database import get_db
 from app.models.entities import Role, User
-from app.services.auth_service import AuthError, get_user_by_token, require_role
+from app.services.auth_service import get_user_by_token, require_role
+
+LOGIN_LIMIT = RateLimiter(max_requests=10, window_seconds=60)
+SCAN_LIMIT = RateLimiter(max_requests=30, window_seconds=60)
+
+
+def enforce_rate_limit(limiter: RateLimiter):
+    def dependency(request: Request) -> None:
+        key = f"{limiter.max_requests}:{request.client.host if request.client else 'unknown'}"
+        if not limiter.allow(key):
+            raise HTTPException(status_code=429, detail="Too many requests, slow down")
+    return dependency
 
 
 def get_current_user(
@@ -22,8 +34,5 @@ def get_current_user(
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
-    try:
-        require_role(user, Role.admin)
-    except AuthError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    require_role(user, Role.admin)
     return user

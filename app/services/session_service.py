@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.time import now
 from app.models.entities import AttendanceRecord, AttendanceSession, User
 from app.services.geo_service import is_within_radius
 
@@ -48,7 +50,8 @@ def validate_and_create(db: Session, data: CreateSessionData, admin: User) -> At
     base_expiry = session_start + timedelta(minutes=data.qr_expiry_minutes)
     # A freshly created QR must always be scannable for its full duration,
     # even if the admin creates it after the session window began.
-    expiry = base_expiry if base_expiry > datetime.now() else datetime.now() + timedelta(minutes=data.qr_expiry_minutes)
+    now_ts = now()
+    expiry = base_expiry if base_expiry > now_ts else now_ts + timedelta(minutes=data.qr_expiry_minutes)
     session = AttendanceSession(
         subject=data.subject.strip(),
         faculty=data.faculty.strip(),
@@ -116,6 +119,11 @@ def scan_attendance(
         status="present",
     )
     db.add(record)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Race-condition backstop: two concurrent scans for the same student+session.
+        db.rollback()
+        raise SessionError("Attendance already marked for this session", status_code=409) from None
     db.refresh(record)
     return record
