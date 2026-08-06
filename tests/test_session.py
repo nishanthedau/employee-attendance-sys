@@ -86,7 +86,8 @@ def test_scan_wrong_qr_token(db_session, seeded):
     with pytest.raises(SessionError) as exc:
         scan_attendance(db_session, session.id, "wrong", student, LAT, LNG)
     assert exc.value.status_code == 400
-    assert "Invalid QR" in exc.value.message
+    assert "isn't valid for this class" in exc.value.message
+    assert exc.value.code == "invalid_qr"
 
 
 def test_scan_unknown_session(db_session, seeded):
@@ -115,7 +116,9 @@ def test_scan_session_not_active(db_session, seeded):
     )
     with pytest.raises(SessionError) as exc:
         scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
-    assert "not currently active" in exc.value.message
+    assert exc.value.status_code == 400
+    assert "isn't open right now" in exc.value.message
+    assert exc.value.code == "session_not_active"
 
 
 def test_scan_duplicate(db_session, seeded):
@@ -134,7 +137,8 @@ def test_scan_outside_zone(db_session, seeded):
     with pytest.raises(SessionError) as exc:
         scan_attendance(db_session, session.id, session.qr_token, student, LAT + 0.01, LNG)
     assert exc.value.status_code == 400
-    assert "Outside attendance zone" in exc.value.message
+    assert "outside the attendance area" in exc.value.message
+    assert exc.value.code == "outside_zone"
 
 
 def test_scan_injects_now(db_session, seeded):
@@ -148,4 +152,4 @@ def test_scan_injects_now(db_session, seeded):
     with pytest.raises(SessionError) as exc:
         scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
     assert exc.value.status_code == 400
-    assert "not currently active" in exc.value.message
+    assert "isn't open right now" in exc.value.message

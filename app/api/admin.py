@@ -62,7 +62,7 @@ def create_session(
 def get_qr(session_id: int = Query(...), admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     session = db.get(AttendanceSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=404, detail="Session not found.")
     return Response(
         content=render_session_qr(session),
         media_type="image/png",
@@ -117,7 +117,7 @@ def history(
 ):
     session = db.get(AttendanceSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=404, detail="Session not found.")
     records = db.execute(
         select(User, AttendanceRecord)
         .join(AttendanceRecord.student)
@@ -168,7 +168,7 @@ def add_student(
         user = create_user(db, payload.name, payload.email, payload.password, Role.student)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="A user with this email already exists") from None
+        raise HTTPException(status_code=409, detail="A student with this email already exists.") from None
     return {"id": user.id, "name": user.name, "email": user.email}
 
 
@@ -176,7 +176,7 @@ def add_student(
 def remove_student(student_id: int, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     user = db.get(User, student_id)
     if not user or user.role != Role.student:
-        raise HTTPException(status_code=404, detail="Student not found")
+        raise HTTPException(status_code=404, detail="Student not found.")
     db.delete(user)
     db.commit()
     return {"ok": True}

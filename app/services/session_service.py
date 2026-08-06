@@ -14,9 +14,10 @@ from app.services.geo_service import is_within_radius
 
 
 class SessionError(Exception):
-    def __init__(self, message: str, status_code: int = 400):
+    def __init__(self, message: str, status_code: int = 400, code: str = "session_error"):
         self.message = message
         self.status_code = status_code
+        self.code = code
 
 
 @dataclass
@@ -34,17 +35,17 @@ class CreateSessionData:
 
 def validate_and_create(db: Session, data: CreateSessionData, admin: User) -> AttendanceSession:
     if not data.subject.strip() or not data.faculty.strip():
-        raise SessionError("Subject and faculty are required")
+        raise SessionError("Please provide a subject and faculty name.", code="invalid_session_data")
     if data.session_date < date.today():
-        raise SessionError("Session date cannot be in the past")
+        raise SessionError("Session date can't be in the past.", code="invalid_session_data")
     if data.start_time >= data.end_time:
-        raise SessionError("Start time must be before end time")
+        raise SessionError("Start time must be before end time.", code="invalid_session_data")
     if not (-90 <= data.latitude <= 90) or not (-180 <= data.longitude <= 180):
-        raise SessionError("Invalid coordinates")
+        raise SessionError("Please enter valid coordinates.", code="invalid_session_data")
     if data.radius_meters <= 0:
-        raise SessionError("Radius must be positive")
+        raise SessionError("Radius must be more than 0 meters.", code="invalid_session_data")
     if data.qr_expiry_minutes <= 0:
-        raise SessionError("QR expiry must be positive")
+        raise SessionError("QR validity must be at least 1 minute.", code="invalid_session_data")
 
     session_start = datetime.combine(data.session_date, data.start_time)
     base_expiry = session_start + timedelta(minutes=data.qr_expiry_minutes)
@@ -92,11 +93,14 @@ def scan_attendance(
 
     session = db.get(AttendanceSession, session_id)
     if not session or not secrets.compare_digest(session.qr_token, qr_token):
-        raise SessionError("Invalid QR code", status_code=400)
+        raise SessionError("This QR code isn't valid for this class.", code="invalid_qr")
     if session.expires_at < now:
-        raise SessionError("QR code has expired", status_code=400)
+        raise SessionError("This QR code has expired. Ask your teacher for a fresh one.", code="qr_expired")
     if not is_session_active(session, now):
-        raise SessionError("Attendance session is not currently active", status_code=400)
+        raise SessionError(
+            "This session isn't open right now. Try again during the class time.",
+            code="session_not_active",
+        )
 
     existing = db.execute(
         select(AttendanceRecord).where(
@@ -105,10 +109,15 @@ def scan_attendance(
         )
     ).scalar_one_or_none()
     if existing:
-        raise SessionError("Attendance already marked for this session", status_code=409)
+        raise SessionError(
+            "You've already marked attendance for this session.", status_code=409, code="already_marked"
+        )
 
     if not is_within_radius(lat, lng, session.latitude, session.longitude, session.radius_meters):
-        raise SessionError("Outside attendance zone", status_code=400)
+        raise SessionError(
+            "You're outside the attendance area. Move closer to the class and try again.",
+            code="outside_zone",
+        )
 
     record = AttendanceRecord(
         student_id=student.id,
@@ -124,6 +133,8 @@ def scan_attendance(
     except IntegrityError:
         # Race-condition backstop: two concurrent scans for the same student+session.
         db.rollback()
-        raise SessionError("Attendance already marked for this session", status_code=409) from None
+        raise SessionError(
+            "You've already marked attendance for this session.", status_code=409, code="already_marked"
+        ) from None
     db.refresh(record)
     return record

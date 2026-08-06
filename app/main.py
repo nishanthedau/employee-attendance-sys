@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -50,17 +51,49 @@ async def request_logging(request: Request, call_next):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail, "code": "error"})
 
 
 @app.exception_handler(AuthError)
 async def auth_error_handler(request: Request, exc: AuthError):
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.message, "code": exc.code},
+    )
 
 
 @app.exception_handler(SessionError)
 async def session_error_handler(request: Request, exc: SessionError):
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.message, "code": exc.code},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    # Flatten pydantic's array of field errors into one human-readable message
+    # instead of dumping loc/msg/type structures at the user.
+    for err in exc.errors():
+        if err.get("type") == "value_error":
+            detail = str(err.get("msg", "")).removeprefix("Value error, ").strip()
+            return JSONResponse(status_code=422, content={"detail": detail, "code": "invalid_input"})
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Please check the details you entered and try again.",
+            "code": "invalid_input",
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong on our side. Please try again.", "code": "internal_error"},
+    )
 
 
 @app.get("/health")

@@ -14,9 +14,10 @@ TOKEN_TTL_HOURS = 12
 
 
 class AuthError(Exception):
-    def __init__(self, message: str, status_code: int = 401):
+    def __init__(self, message: str, status_code: int = 401, code: str = "auth_error"):
         self.message = message
         self.status_code = status_code
+        self.code = code
 
 
 def hash_password(password: str) -> str:
@@ -60,7 +61,7 @@ def issue_token(db: Session, user: User) -> str:
 def authenticate(db: Session, email: str, password: str) -> User:
     user = db.execute(select(User).where(User.email == email.lower())).scalar_one_or_none()
     if not user or not verify_password(password, user.password_hash):
-        raise AuthError("Invalid email or password")
+        raise AuthError("Invalid email or password", code="invalid_credentials")
     return user
 
 
@@ -81,4 +82,4 @@ def revoke_token(db: Session, token: str) -> None:
 
 def require_role(user: User, role: Role) -> None:
     if user.role != role:
-        raise AuthError("Forbidden", status_code=403)
+        raise AuthError("You don't have permission to do that.", status_code=403, code="forbidden")

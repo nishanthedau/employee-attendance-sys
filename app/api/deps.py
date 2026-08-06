@@ -16,7 +16,10 @@ def enforce_rate_limit(limiter: RateLimiter):
     def dependency(request: Request) -> None:
         key = f"{limiter.max_requests}:{request.client.host if request.client else 'unknown'}"
         if not limiter.allow(key):
-            raise HTTPException(status_code=429, detail="Too many requests, slow down")
+            raise HTTPException(
+                status_code=429,
+                detail="Too many attempts. Please wait about a minute and try again.",
+            )
     return dependency
 
 
@@ -25,11 +28,11 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+        raise HTTPException(status_code=401, detail="Please sign in to continue.")
     token = authorization.split(" ", 1)[1].strip()
     user = get_user_by_token(db, token)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+        raise HTTPException(status_code=401, detail="Your session has expired. Please sign in again.")
     return user
 
 

@@ -85,7 +85,8 @@ def test_scan_outside_zone(client, db_session):
         headers=stu_h,
     )
     assert res.status_code == 400
-    assert res.json()["detail"] == "Outside attendance zone"
+    assert "outside the attendance area" in res.json()["detail"]
+    assert res.json()["code"] == "outside_zone"
 
 
 def test_scan_wrong_token(client, db_session):
@@ -99,7 +100,7 @@ def test_scan_wrong_token(client, db_session):
         headers=stu_h,
     )
     assert res.status_code == 400
-    assert "Invalid QR" in res.json()["detail"]
+    assert "isn't valid for this class" in res.json()["detail"]
 
 
 def test_admin_dashboard_and_sessions(client, db_session):

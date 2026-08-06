@@ -34,9 +34,9 @@ class SessionCreateRequest(BaseModel):
         self.subject = self.subject.strip()
         self.faculty = self.faculty.strip()
         if not self.subject or not self.faculty:
-            raise ValueError("subject and faculty cannot be blank")
+            raise ValueError("Subject and faculty can't be blank.")
         if self.start_time >= self.end_time:
-            raise ValueError("start_time must be before end_time")
+            raise ValueError("Start time must be before end time.")
         return self
 
 
@@ -50,7 +50,7 @@ class StudentCreateRequest(BaseModel):
         self.name = self.name.strip()
         self.email = self.email.lower().strip()
         if not self.name:
-            raise ValueError("name cannot be blank")
+            raise ValueError("Name can't be blank.")
         return self
 
 

@@ -29,6 +29,15 @@ def test_login_wrong_password(client, db_session):
 def test_login_invalid_email_rejected(client, db_session):
     res = client.post("/api/auth/login", json={"email": "not-an-email", "password": "x"})
     assert res.status_code == 422
+    assert isinstance(res.json()["detail"], str)
+    assert res.json()["code"] == "invalid_input"
+
+
+def test_login_missing_field_friendly_message(client, db_session):
+    res = client.post("/api/auth/login", json={"email": "stu@campus.edu"})
+    assert res.status_code == 422
+    assert isinstance(res.json()["detail"], str)
+    assert len(res.json()["detail"]) > 0
 
 
 def test_login_email_case_insensitive(client, db_session):

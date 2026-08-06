@@ -20,23 +20,51 @@ const API = {
   async request(method, path, body) {
     const headers = { "Content-Type": "application/json" };
     if (this.token()) headers.Authorization = `Bearer ${this.token()}`;
-    const res = await fetch(path, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch(path, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch {
+      throw new Error("Can't reach the server. Check your internet connection and try again.");
+    }
     if (res.status === 401) {
       this.clear();
       window.location.href = "/login";
-      throw new Error("Session expired");
+      throw new Error("Your session has expired. Please sign in again.");
     }
-    const data = await res.json().catch(() => ({}));
+    let data = {};
+    try {
+      data = await res.json();
+    } catch {
+      data = {};
+    }
     if (!res.ok) {
-      const msg =
-        typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || "Request failed");
-      throw new Error(msg);
+      const err = new Error(this.friendlyError(res.status, data));
+      err.code = data.code;
+      throw err;
     }
     return data;
+  },
+  friendlyError(status, data) {
+    if (status === 429) {
+      return "Too many attempts. Please wait about a minute and try again.";
+    }
+    if (status >= 500) {
+      return "Something went wrong on our side. Please try again.";
+    }
+    if (typeof data.detail === "string" && data.detail.trim()) {
+      return data.detail;
+    }
+    if (status === 422) {
+      return "Please check the details you entered and try again.";
+    }
+    if (status === 404) {
+      return "That page or record doesn't exist.";
+    }
+    return `Something went wrong (error ${status}). Please try again.`;
   },
   get(path) {
     return this.request("GET", path);
@@ -104,7 +132,7 @@ async function loadQrImage(sessionId, imgEl) {
   const res = await fetch(`/api/admin/attendance/qr?session_id=${sessionId}`, {
     headers: { Authorization: `Bearer ${API.token()}` },
   });
-  if (!res.ok) throw new Error("Failed to load QR code");
+  if (!res.ok) throw new Error("Couldn't load the QR code. Try again.");
   const blob = await res.blob();
   if (imgEl._objUrl) URL.revokeObjectURL(imgEl._objUrl);
   imgEl._objUrl = URL.createObjectURL(blob);
