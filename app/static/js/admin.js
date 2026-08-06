@@ -1,0 +1,248 @@
+const user = API.user();
+
+async function guard() {
+  if (!API.token() || !user) {
+    window.location.href = "/login";
+    return;
+  }
+  if (user.role !== "admin") {
+    window.location.href = "/student";
+    return;
+  }
+  document.getElementById("nav-user").textContent = user.name;
+  document.getElementById("avatar").textContent = user.name.slice(0, 1).toUpperCase();
+  document.getElementById("today-line").textContent = `Today · ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}`;
+}
+
+const overlays = {
+  open: (id) => document.getElementById(id).classList.add("open"),
+  close: (id) => document.getElementById(id).classList.remove("open"),
+};
+function closeOverlay(id) { overlays.close(id); }
+
+function openDrawer() {
+  document.getElementById("create-msg").classList.add("hidden");
+  overlays.open("create-drawer");
+  overlays.open("create-backdrop");
+}
+function closeDrawer() {
+  overlays.close("create-drawer");
+  overlays.close("create-backdrop");
+}
+document.getElementById("create-backdrop").addEventListener("click", closeDrawer);
+
+async function loadStats() {
+  const s = await API.get("/api/admin/dashboard");
+  const t = s.today;
+  document.getElementById("metrics").innerHTML = `
+    <div class="metric accent"><div class="value">${t.enrolled}</div><div class="label">Enrolled</div></div>
+    <div class="metric green"><div class="value">${t.present}<small> / ${t.enrolled}</small></div><div class="label">Present today</div></div>
+    <div class="metric red"><div class="value">${t.absent}</div><div class="label">Absent today</div></div>
+    <div class="metric"><div class="value">${t.percentage}<small>%</small></div><div class="label">Attendance</div></div>
+    <div class="metric"><div class="value">${t.sessions}</div><div class="label">Sessions today</div></div>
+  `;
+}
+
+async function loadSessions() {
+  const date = document.getElementById("filter-date").value;
+  const subject = document.getElementById("filter-subject").value;
+  const params = new URLSearchParams();
+  if (date) params.set("session_date", date);
+  if (subject) params.set("subject", subject);
+  const sessions = await API.get(`/api/admin/sessions?${params.toString()}`);
+  const body = document.getElementById("sessions-body");
+  body.innerHTML = sessions.length
+    ? ""
+    : `<tr><td colspan="7" class="center muted">No sessions found</td></tr>`;
+  for (const s of sessions) {
+    const live = s.qr_expires_at && new Date(s.qr_expires_at) > new Date();
+    const status = live ? `<span class="pill-live">live</span>` : `<span class="pill-dead">expired</span>`;
+    body.insertAdjacentHTML(
+      "beforeend",
+      `<tr>
+        <td style="font-weight:600;">${esc(s.subject)}</td>
+        <td class="muted">${esc(s.faculty)}</td>
+        <td>${fmtDate(s.date)}</td>
+        <td class="num">${s.start_time} – ${s.end_time}</td>
+        <td class="num">${s.marked}</td>
+        <td>${status}</td>
+        <td class="actions">
+          <button class="btn ghost sm" onclick="showQr(${s.id}, '${esc(s.subject)}')">QR</button>
+          <button class="btn ghost sm" onclick="showHistory(${s.id})">View</button>
+        </td>
+      </tr>`
+    );
+  }
+}
+
+async function loadSubjects() {
+  try {
+    const data = await API.get("/api/admin/subjects");
+    const sel = document.getElementById("filter-subject");
+    for (const s of data.subjects) {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.textContent = s;
+      sel.appendChild(opt);
+    }
+  } catch {}
+}
+
+async function loadStudents() {
+  const q = document.getElementById("student-search").value.trim();
+  const students = await API.get(`/api/admin/students?q=${encodeURIComponent(q)}`);
+  const el = document.getElementById("students-list");
+  document.getElementById("students-count").textContent = `${students.length} student${students.length === 1 ? "" : "s"}`;
+  el.innerHTML = students.length
+    ? students.map((s) => `<span>${esc(s.name)} — <span class="faint">${esc(s.email)}</span></span><br/>`).join("")
+    : "No students found";
+}
+
+// ---------- QR ----------
+let qrTimer = null;
+
+function showQr(id, subject) {
+  clearInterval(qrTimer);
+  const img = document.getElementById("qr-image");
+  const meta = document.getElementById("qr-meta");
+  const status = document.getElementById("qr-status");
+  const countdown = document.getElementById("qr-countdown");
+  meta.textContent = `Session #${id} · ${subject}`;
+
+  const paint = (expiresAt) => {
+    loadQrImage(id, img).catch((e) => {
+      status.className = "pill-dead";
+      status.textContent = "unavailable";
+      countdown.textContent = e.message;
+    });
+    if (expiresAt && new Date(expiresAt) > new Date()) {
+      status.className = "pill-live";
+      status.textContent = "live";
+      qrTimer = setInterval(() => {
+        const left = new Date(expiresAt) - Date.now();
+        if (left <= 0) {
+          clearInterval(qrTimer);
+          status.className = "pill-dead";
+          status.textContent = "expired";
+          countdown.textContent = "QR expired — create a new session";
+          return;
+        }
+        const m = Math.floor(left / 60000);
+        const s = Math.floor((left % 60000) / 1000);
+        countdown.textContent = `Expires in ${m}m ${s}s`;
+      }, 1000);
+    } else {
+      status.className = "pill-dead";
+      status.textContent = "expired";
+      countdown.textContent = "QR expired — create a new session";
+    }
+  };
+
+  // Re-query the session so qr_expires_at is fresh when reopening a row.
+  // NOTE: never send empty query params — FastAPI 422s on empty date strings.
+  API.get("/api/admin/sessions").then((sessions) => {
+    const s = sessions.find((x) => x.id === id);
+    paint(s ? s.qr_expires_at : null);
+  }).catch(() => paint(null));
+
+  overlays.open("qr-overlay");
+}
+
+// ---------- History ----------
+function showHistory(id) {
+  API.get(`/api/admin/attendance/history?session_id=${id}`).then((data) => {
+    document.getElementById("history-title").textContent = `${data.session.subject} · ${data.session.faculty}`;
+    document.getElementById("history-count").textContent = `${data.marked} marked`;
+    const body = document.getElementById("history-body");
+    body.innerHTML = data.records.length
+      ? ""
+      : `<tr><td colspan="3" class="center muted">No attendance marked yet</td></tr>`;
+    for (const r of data.records) {
+      body.insertAdjacentHTML(
+        "beforeend",
+        `<tr>
+          <td style="font-weight:600;">${esc(r.student_name)}</td>
+          <td class="num muted">${r.scan_time}</td>
+          <td><span class="pill ok">${r.status}</span></td>
+        </tr>`
+      );
+    }
+    document.getElementById("history-qr-btn").onclick = () => showQr(id, data.session.subject);
+    overlays.open("history-overlay");
+  }).catch((e) => showToast(e.message, "err"));
+}
+
+// ---------- Create ----------
+async function handleCreate(e) {
+  e.preventDefault();
+  const msgEl = document.getElementById("create-msg");
+  msgEl.classList.add("hidden");
+  const btn = document.getElementById("create-submit");
+  btn.disabled = true;
+  const f = e.target;
+  const payload = {
+    subject: f.subject.value.trim(),
+    faculty: f.faculty.value.trim(),
+    date: f.date.value,
+    start_time: f.start_time.value + ":00",
+    end_time: f.end_time.value + ":00",
+    latitude: parseFloat(f.latitude.value),
+    longitude: parseFloat(f.longitude.value),
+    radius_meters: parseInt(f.radius_meters.value, 10),
+    qr_expiry_minutes: parseInt(f.qr_expiry_minutes.value, 10),
+  };
+  try {
+    const session = await API.post("/api/admin/attendance/create", payload);
+    closeDrawer();
+    f.reset();
+    f.latitude.value = "";
+    f.longitude.value = "";
+    await Promise.all([loadStats(), loadSessions(), loadSubjects()]);
+    showQr(session.id, session.subject);
+    showToast(`Session "${session.subject}" created`, "ok");
+  } catch (err) {
+    showAlert(msgEl, "err", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function useCurrentLocation() {
+  try {
+    const loc = await getLocation();
+    document.querySelector('[name="latitude"]').value = loc.lat;
+    document.querySelector('[name="longitude"]').value = loc.lng;
+  } catch (err) {
+    showAlert(document.getElementById("create-msg"), "err", err.message);
+  }
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+document.getElementById("create-btn").addEventListener("click", openDrawer);
+document.getElementById("create-form").addEventListener("submit", handleCreate);
+document.getElementById("filter-btn").addEventListener("click", loadSessions);
+document.getElementById("export-btn").addEventListener("click", () => {
+  const date = document.getElementById("filter-date").value;
+  const subject = document.getElementById("filter-subject").value;
+  const params = new URLSearchParams();
+  if (date) params.set("session_date", date);
+  if (subject) params.set("subject", subject);
+  window.location.href = `/api/admin/export?${params.toString()}`;
+});
+document.getElementById("student-search").addEventListener("input", debounce(loadStudents, 300));
+
+(async () => {
+  await guard();
+  try {
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadStudents()]);
+  } catch (err) {
+    showToast(err.message, "err");
+  }
+})();

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin · Attendance</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" onclick="location.href='/admin'"><span class="mark"></span>Attendance<em>.</em></div>
+      <div class="top-actions">
+        <span class="user-chip"><span class="avatar" id="avatar"></span><span id="nav-user"></span></span>
+        <button class="icon-btn" title="Log out" onclick="logout()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div id="toast" class="alert hidden"></div>
+
+    <div class="page-head">
+      <div>
+        <h1>Overview</h1>
+        <p class="sub" id="today-line">Today's attendance at a glance.</p>
+      </div>
+      <button class="btn" id="create-btn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Session
+      </button>
+    </div>
+
+    <div class="metrics" id="metrics"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Sessions</h3>
+        <div class="toolbar">
+          <input class="input" type="date" id="filter-date" style="width: 150px;" />
+          <select class="select" id="filter-subject" style="width: 170px;">
+            <option value="">All subjects</option>
+          </select>
+          <button class="btn ghost sm" id="filter-btn">Apply</button>
+          <button class="btn ghost sm" id="export-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export
+          </button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr><th>Subject</th><th>Faculty</th><th>Date</th><th>Time</th><th>Marked</th><th>Status</th><th class="actions">Actions</th></tr>
+          </thead>
+          <tbody id="sessions-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Students</h3>
+        <span class="faint small" id="students-count"></span>
+      </div>
+      <div class="card-body">
+        <div class="flex mb-16">
+          <input class="input grow" id="student-search" placeholder="Search by name or email…" />
+        </div>
+        <div id="students-list" class="muted small"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create session drawer -->
+  <div class="backdrop" id="create-backdrop"></div>
+  <aside class="drawer" id="create-drawer">
+    <div class="overlay-head">
+      <h3>New Attendance Session</h3>
+      <button class="close" onclick="closeDrawer()">&times;</button>
+    </div>
+    <div id="create-msg" class="alert err hidden"></div>
+    <form id="create-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Subject</label>
+          <input class="input" name="subject" required placeholder="Operating Systems" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Faculty</label>
+          <input class="input" name="faculty" required placeholder="Dr. Mehta" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Date</label>
+          <input class="input" name="date" type="date" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">QR valid for (min)</label>
+          <input class="input" name="qr_expiry_minutes" type="number" min="1" value="3" required />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Start time</label>
+          <input class="input" name="start_time" type="time" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">End time</label>
+          <input class="input" name="end_time" type="time" required />
+        </div>
+      </div>
+      <div class="form-row-3">
+        <div class="form-group">
+          <label class="form-label">Latitude</label>
+          <input class="input" name="latitude" type="number" step="any" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Longitude</label>
+          <input class="input" name="longitude" type="number" step="any" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Radius (m)</label>
+          <input class="input" name="radius_meters" type="number" min="1" value="75" required />
+        </div>
+      </div>
+      <div class="mb-16">
+        <button type="button" class="btn ghost sm" onclick="useCurrentLocation()">Use my current location</button>
+      </div>
+      <div class="flex between">
+        <button type="button" class="btn ghost" onclick="closeDrawer()">Cancel</button>
+        <button type="submit" class="btn" id="create-submit">Create &amp; Show QR</button>
+      </div>
+    </form>
+  </aside>
+
+  <!-- QR overlay -->
+  <div class="overlay" id="qr-overlay">
+    <div class="overlay-panel">
+      <div class="overlay-head">
+        <h3>Session QR</h3>
+        <button class="close" onclick="closeOverlay('qr-overlay')">&times;</button>
+      </div>
+      <div class="qr-stage">
+        <div class="qr-frame"><img id="qr-image" alt="Attendance QR" /></div>
+        <div class="qr-meta">
+          <span class="pill-live" id="qr-status">live</span>
+          <span class="muted small" id="qr-meta"></span>
+          <span class="faint small" id="qr-countdown"></span>
+        </div>
+      </div>
+      <p class="muted small center mt-16">Students open the app and scan this with their camera.
+      Reopens automatically until it expires.</p>
+    </div>
+  </div>
+
+  <!-- History overlay -->
+  <div class="overlay" id="history-overlay">
+    <div class="overlay-panel" style="width: min(560px, 100%);">
+      <div class="overlay-head">
+        <h3 id="history-title">Session</h3>
+        <button class="close" onclick="closeOverlay('history-overlay')">&times;</button>
+      </div>
+      <div class="flex mb-16">
+        <span id="history-count" class="pill info"></span>
+        <button class="btn ghost sm" id="history-qr-btn">Show QR</button>
+      </div>
+      <div class="table-wrap" style="max-height: 320px; overflow-y: auto;">
+        <table class="table">
+          <thead><tr><th>Student</th><th>Scanned at</th><th>Status</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/admin.js"></script>
+</body>
+</html>

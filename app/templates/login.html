@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in · Attendance</title>
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="auth">
+    <aside class="auth-side">
+      <div class="content">
+        <div class="brand"><span class="mark"></span>Attendance<em>.</em></div>
+        <h1>Show up. <em>Once.</em><br />We handle the rest.</h1>
+        <p class="lead">Scan a single QR to mark yourself present — verified by your device's
+        location, blocked from being reused, and recorded in seconds.</p>
+      </div>
+      <p class="auth-foot">© 2026 Attendance System · QR + GPS verified</p>
+      <div class="motif">
+        <i class="f"></i><i></i><i></i><i class="f"></i><i></i>
+        <i></i><i class="f"></i><i></i><i></i><i class="f"></i>
+        <i></i><i></i><i class="f"></i><i></i><i></i>
+        <i class="f"></i><i></i><i></i><i class="f"></i><i></i>
+        <i></i><i class="f"></i><i></i><i></i><i class="e"></i>
+      </div>
+    </aside>
+
+    <section class="auth-form">
+      <div class="auth-card">
+        <h2 class="title">Welcome back</h2>
+        <p class="sub">Sign in to your account to continue.</p>
+
+        <div id="alert" class="alert err hidden"></div>
+
+        <form id="login-form" autocomplete="off">
+          <div class="form-group">
+            <label class="form-label" for="email">Email</label>
+            <input class="input" type="email" id="email" placeholder="you@campus.edu" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="password">Password</label>
+            <input class="input" type="password" id="password" placeholder="••••••••" required />
+          </div>
+          <button class="btn block lg" type="submit" id="submit-btn">Sign in</button>
+        </form>
+
+        <div class="auth-divider">demo accounts</div>
+        <div class="flex">
+          <button class="btn ghost grow" id="demo-admin">Admin</button>
+          <button class="btn ghost grow" id="demo-student">Student</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/js/api.js"></script>
+  <script>
+    if (API.token() && API.user()) {
+      window.location.href = API.user().role === "admin" ? "/admin" : "/student";
+    }
+
+    const form = document.getElementById("login-form");
+    const alertEl = document.getElementById("alert");
+    const btn = document.getElementById("submit-btn");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      alertEl.classList.add("hidden");
+      btn.disabled = true;
+      btn.textContent = "Signing in…";
+      try {
+        const data = await API.post("/api/auth/login", {
+          email: document.getElementById("email").value.trim(),
+          password: document.getElementById("password").value,
+        });
+        API.setSession(data.token, data.user);
+        window.location.href = data.user.role === "admin" ? "/admin" : "/student";
+      } catch (err) {
+        showAlert(alertEl, "err", err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Sign in";
+      }
+    });
+
+    const fill = (email, password) => {
+      document.getElementById("email").value = email;
+      document.getElementById("password").value = password;
+    };
+    document.getElementById("demo-admin").addEventListener("click", () => fill("admin@campus.edu", "admin123"));
+    document.getElementById("demo-student").addEventListener("click", () => fill("aarav@campus.edu", "student123"));
+  </script>
+</body>
+</html>
