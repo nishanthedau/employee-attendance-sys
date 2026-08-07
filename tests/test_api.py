@@ -3,8 +3,9 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.models.entities import AttendanceRecord, AttendanceSession, Role
+from app.models.entities import AttendanceRecord, AttendanceSession, Role, User
 from app.services.auth_service import create_user
+from app.services.qr_service import render_session_qr, session_payload
 
 LAT, LNG = 28.6139, 77.2090
 
@@ -278,3 +279,180 @@ def test_current_week_shape(client, db_session):
 def test_student_cannot_access_admin_apis(client, db_session):
     stu_h = student_token(client, db_session)
     assert client.get("/api/admin/dashboard", headers=stu_h).status_code == 403
+
+
+# ---------- Rate limiting ----------
+
+def test_login_rate_limited(client, db_session):
+    for _ in range(10):
+        res = client.post("/api/auth/login", json={"email": "x@y.z", "password": "bad"})
+        assert res.status_code == 401
+    res = client.post("/api/auth/login", json={"email": "x@y.z", "password": "bad"})
+    assert res.status_code == 429
+    assert res.json()["code"] == "error"
+
+
+def test_scan_rate_limited(client, db_session):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    stu_h = student_token(client, db_session)
+    for _ in range(30):
+        client.post("/api/student/attendance/scan", data={
+            "session_id": str(session["id"]), "qr_token": "bad", "latitude": str(LAT), "longitude": str(LNG),
+        }, files={"selfie": ("s.png", PNG, "image/png")}, headers=stu_h)
+    res = client.post("/api/student/attendance/scan", data={
+        "session_id": str(session["id"]), "qr_token": "bad", "latitude": str(LAT), "longitude": str(LNG),
+    }, files={"selfie": ("s.png", PNG, "image/png")}, headers=stu_h)
+    assert res.status_code == 429
+
+
+# ---------- Session creation validation via API ----------
+
+def test_create_session_past_date_rejected(client, db_session):
+    headers = admin_token(client, db_session)
+    res = create_session(client, headers, date=(date.today() - timedelta(days=1)).isoformat())
+    assert res.status_code == 400
+    assert "past" in res.json()["detail"]
+
+
+def test_create_session_end_before_start_rejected(client, db_session):
+    headers = admin_token(client, db_session)
+    res = create_session(client, headers, start_time="12:00:00", end_time="09:00:00")
+    assert res.status_code == 422
+    assert res.json()["code"] == "invalid_input"
+
+
+def test_create_session_invalid_radius_rejected(client, db_session):
+    headers = admin_token(client, db_session)
+    res = create_session(client, headers, radius_meters=0)
+    assert res.status_code == 422
+
+
+def test_create_session_blank_subject_rejected(client, db_session):
+    headers = admin_token(client, db_session)
+    res = create_session(client, headers, subject="   ")
+    assert res.status_code == 422
+
+
+# ---------- QR payload correctness ----------
+
+def test_qr_payload_and_png(client, db_session):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    row = db_session.get(AttendanceSession, session["id"])
+    assert session_payload(row) == {"session_id": row.id, "qr_token": row.qr_token}
+    assert render_session_qr(row).startswith(b"\x89PNG\r\n\x1a\n")
+
+
+# ---------- Scan edge cases ----------
+
+def test_scan_unknown_session(client, db_session):
+    admin_h = admin_token(client, db_session)
+    create_session(client, admin_h)
+    stu_h = student_token(client, db_session)
+    res = scan(client, stu_h, 999999, "whatever")
+    assert res.status_code == 400
+    assert res.json()["code"] == "invalid_qr"
+
+
+def test_scan_future_session_not_active(client, db_session):
+    admin_h = admin_token(client, db_session)
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    session = create_session(client, admin_h, date=tomorrow).json()
+    token = session_qr_token(db_session, session["id"])
+
+    stu_h = student_token(client, db_session)
+    res = scan(client, stu_h, session["id"], token)
+    assert res.status_code == 400
+    assert res.json()["code"] == "session_not_active"
+
+
+def test_scan_out_of_range_lat(client, db_session):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    token = session_qr_token(db_session, session["id"])
+
+    stu_h = student_token(client, db_session)
+    res = scan(client, stu_h, session["id"], token, lat=95.0)
+    assert res.status_code == 422
+
+
+def test_scan_empty_qr_token(client, db_session):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+
+    stu_h = student_token(client, db_session)
+    data = {"session_id": str(session["id"]), "qr_token": "", "latitude": str(LAT), "longitude": str(LNG)}
+    res = client.post("/api/student/attendance/scan", data=data,
+                      files={"selfie": ("s.png", PNG, "image/png")}, headers=stu_h)
+    assert res.status_code == 422
+
+
+# ---------- Selfie endpoint 404 paths ----------
+
+def test_selfie_missing_record_404(client, db_session):
+    headers = admin_token(client, db_session)
+    assert client.get("/api/admin/selfie/999999", headers=headers).status_code == 404
+
+
+def test_selfie_record_without_photo_404(client, db_session):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    student_token(client, db_session)
+    student = db_session.execute(select(User).where(User.role == Role.student)).scalar_one()
+    record = AttendanceRecord(
+        student_id=student.id,
+        session_id=session["id"],
+        scan_time=datetime.now(),
+        latitude=LAT,
+        longitude=LNG,
+        selfie_path=None,
+        status="present",
+    )
+    db_session.add(record)
+    db_session.commit()
+    assert client.get(f"/api/admin/selfie/{record.id}", headers=admin_h).status_code == 404
+
+
+def test_selfie_file_missing_on_disk_404(client, db_session, tmp_selfie_storage):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    stu_h = student_token(client, db_session)
+    scan(client, stu_h, session["id"], session_qr_token(db_session, session["id"]))
+    record_id = db_session.execute(
+        select(AttendanceRecord.id).where(AttendanceRecord.session_id == session["id"])
+    ).scalar_one()
+    for f in tmp_selfie_storage.glob("*"):
+        f.unlink()
+    assert client.get(f"/api/admin/selfie/{record_id}", headers=admin_h).status_code == 404
+
+
+# ---------- Pagination & CSV filters ----------
+
+def test_sessions_pagination(client, db_session):
+    headers = admin_token(client, db_session)
+    for subject in ("DBMS", "Networks", "AI"):
+        create_session(client, headers, subject=subject)
+
+    page1 = client.get("/api/admin/sessions?limit=2&offset=0", headers=headers).json()
+    assert page1["total"] >= 3
+    assert len(page1["sessions"]) == 2
+
+    page2 = client.get("/api/admin/sessions?limit=2&offset=2", headers=headers).json()
+    assert len(page2["sessions"]) == page1["total"] - 2
+    ids1 = {s["id"] for s in page1["sessions"]}
+    assert not (ids1 & {s["id"] for s in page2["sessions"]})
+
+
+def test_export_csv_subject_filter(client, db_session):
+    headers = admin_token(client, db_session)
+    create_session(client, headers, subject="DBMS")
+    networks = create_session(client, headers, subject="Networks").json()
+
+    stu_h = student_token(client, db_session)
+    scan(client, stu_h, networks["id"], session_qr_token(db_session, networks["id"]))
+
+    filtered = client.get("/api/admin/export?subject=Networks", headers=headers)
+    assert filtered.status_code == 200
+    assert "Networks" in filtered.text
+    assert "DBMS" not in filtered.text.split("scan_time")[1]

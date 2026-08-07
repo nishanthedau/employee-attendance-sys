@@ -49,6 +49,17 @@ def test_create_session_success(db_session, seeded):
     assert session.created_by == admin.id
 
 
+def test_fresh_qr_always_scannable(db_session, seeded):
+    admin, _ = seeded
+    # Session window already started (00:00 today); the freshly created QR must
+    # still be valid for its full duration instead of expiring at 00:03.
+    session = validate_and_create(
+        db_session, session_data(start_time=time(0, 0), qr_expiry_minutes=3), admin
+    )
+    remaining = session.expires_at - datetime.now()
+    assert timedelta(minutes=2) < remaining <= timedelta(minutes=4)
+
+
 @pytest.mark.parametrize(
     "override",
     [
@@ -78,6 +89,16 @@ def test_scan_success(db_session, seeded):
     record = scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
     assert record.status == "present"
     assert record.student_id == student.id
+    assert record.selfie_path is None
+
+
+def test_scan_stores_selfie_path(db_session, seeded):
+    admin, student = seeded
+    session = validate_and_create(db_session, session_data(), admin)
+    record = scan_attendance(
+        db_session, session.id, session.qr_token, student, LAT, LNG, selfie_path="photo.jpg"
+    )
+    assert record.selfie_path == "photo.jpg"
 
 
 def test_scan_wrong_qr_token(db_session, seeded):
