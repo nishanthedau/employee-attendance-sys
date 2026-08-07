@@ -1,5 +1,5 @@
 const user = API.user();
-const SCAN_PAYLOAD = "_scanPayload";
+const SELFIE_PAYLOAD = "_scanPayload";
 const SELFIE_BLOB = "_selfieBlob";
 
 async function guard() {
@@ -52,6 +52,11 @@ function openScan() {
   overlaysOpen("scan-overlay");
   startScanner();
 }
+function openSelfieOnly() {
+  showStep("pick");
+  overlaysOpen("scan-overlay");
+  loadLiveSessions();
+}
 function closeScan() {
   overlaysClose("scan-overlay");
   stopScanner();
@@ -70,9 +75,41 @@ function stopScanner() {
 }
 
 function showStep(step) {
-  document.getElementById("scan-title").textContent = step === "qr" ? "Scan QR" : "Confirm identity";
+  const titles = { qr: "Scan QR", pick: "Mark with Selfie", selfie: "Confirm identity" };
+  document.getElementById("scan-title").textContent = titles[step] || "Confirm";
   document.getElementById("qr-step").classList.toggle("hidden", step !== "qr");
+  document.getElementById("pick-step").classList.toggle("hidden", step !== "pick");
   document.getElementById("selfie-step").classList.toggle("hidden", step !== "selfie");
+}
+
+async function loadLiveSessions() {
+  const list = document.getElementById("live-sessions-list");
+  const msgEl = document.getElementById("pick-msg");
+  msgEl.classList.add("hidden");
+  list.innerHTML = "";
+  try {
+    const data = await API.get("/api/student/attendance/live-sessions");
+    const sessions = data.sessions || [];
+    if (!sessions.length) {
+      showAlert(msgEl, "info", "No classes are open right now. Use Scan QR or try again during class time.");
+      return;
+    }
+    for (const s of sessions) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = `
+        <span><span class="s-subject">${esc(s.subject)}</span>
+        <div class="s-meta">${esc(s.faculty)} · ${s.start_time} – ${s.end_time}</div></span>
+        <span class="faint small">Mark</span>`;
+      b.addEventListener("click", () => {
+        window[SELFIE_PAYLOAD] = { session_id: s.id, qr_token: null };
+        openSelfie();
+      });
+      list.appendChild(b);
+    }
+  } catch (err) {
+    showAlert(msgEl, "err", err.message);
+  }
 }
 
 function cameraError(e, msgEl) {
@@ -264,13 +301,14 @@ async function submitWithSelfie() {
     const loc = await getLocation();
     busy("Marking attendance");
     const payload = window[SELFIE_PAYLOAD];
+    const viaQr = Boolean(payload.qr_token);
     const fd = new FormData();
     fd.append("session_id", String(payload.session_id));
-    fd.append("qr_token", payload.qr_token);
+    if (viaQr) fd.append("qr_token", payload.qr_token);
     fd.append("latitude", String(loc.lat));
     fd.append("longitude", String(loc.lng));
     fd.append("selfie", window[SELFIE_BLOB], "selfie.jpg");
-    const result = await API.postForm("/api/student/attendance/scan", fd);
+    const result = await API.postForm(viaQr ? "/api/student/attendance/scan" : "/api/student/attendance/selfie", fd);
     closeScan();
     showToast(result.message, "ok");
     await loadWeek();
@@ -283,6 +321,7 @@ async function submitWithSelfie() {
 }
 
 document.getElementById("scan-btn").addEventListener("click", openScan);
+document.getElementById("selfie-only-btn").addEventListener("click", openSelfieOnly);
 document.getElementById("manual-btn").addEventListener("click", () => {
   const raw = document.getElementById("manual-payload").value.trim();
   if (!raw) return;

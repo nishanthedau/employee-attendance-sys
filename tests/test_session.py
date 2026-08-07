@@ -125,7 +125,7 @@ def test_scan_expired_qr(db_session, seeded):
     db_session.commit()
     with pytest.raises(SessionError) as exc:
         scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
-    assert "expired" in exc.value.message
+    assert "no longer open" in exc.value.message
 
 
 def test_scan_session_not_active(db_session, seeded):

@@ -132,6 +132,112 @@ def test_scan_expired_qr(client, db_session):
     assert res.json()["code"] == "qr_expired"
 
 
+# ---------- Selfie-only attendance (no QR) ----------
+
+def selfie_scan(client, headers, session_id, lat=LAT, lng=LNG, selfie=PNG, selfie_type="image/png"):
+    data = {"session_id": str(session_id), "latitude": str(lat), "longitude": str(lng)}
+    files = {"selfie": ("selfie.png", selfie, selfie_type)} if selfie is not None else None
+    return client.post("/api/student/attendance/selfie", data=data, files=files, headers=headers)
+
+
+def test_selfie_only_success(client, db_session, tmp_selfie_storage):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+
+    stu_h = student_token(client, db_session)
+    res = selfie_scan(client, stu_h, session["id"])
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+    assert res.json()["record"]["selfie"] is True
+    assert len(list(tmp_selfie_storage.glob("*"))) == 1
+
+    rec = db_session.execute(
+        select(AttendanceRecord).where(
+            AttendanceRecord.student_id == student_id_from(client, db_session),
+            AttendanceRecord.session_id == session["id"],
+        )
+    ).scalar_one_or_none()
+    assert rec is not None and rec.status == "present"
+
+
+def student_id_from(client, db_session):
+    return db_session.execute(select(User.id).where(User.email == "stu@campus.edu")).scalar_one()
+
+
+def test_selfie_only_duplicate_409(client, db_session, tmp_selfie_storage):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    stu_h = student_token(client, db_session)
+
+    assert selfie_scan(client, stu_h, session["id"]).status_code == 200
+    dup = selfie_scan(client, stu_h, session["id"])
+    assert dup.status_code == 409
+    assert dup.json()["code"] == "already_marked"
+    assert len(list(tmp_selfie_storage.glob("*"))) == 1
+
+
+def test_selfie_only_outside_zone_no_orphan(client, db_session, tmp_selfie_storage):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    stu_h = student_token(client, db_session)
+
+    res = selfie_scan(client, stu_h, session["id"], lat=LAT + 0.01)
+    assert res.status_code == 400
+    assert res.json()["code"] == "outside_zone"
+    assert list(tmp_selfie_storage.glob("*")) == []
+
+
+def test_selfie_only_unknown_session(client, db_session, tmp_selfie_storage):
+    stu_h = student_token(client, db_session)
+    res = selfie_scan(client, stu_h, 99999)
+    assert res.status_code == 400
+    assert res.json()["code"] == "session_not_active"
+    assert list(tmp_selfie_storage.glob("*")) == []
+
+
+def test_selfie_only_session_not_active(client, db_session, tmp_selfie_storage):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    row = db_session.get(AttendanceSession, session["id"])
+    row.date = date.today() - timedelta(days=1)
+    db_session.commit()
+
+    stu_h = student_token(client, db_session)
+    res = selfie_scan(client, stu_h, session["id"])
+    assert res.status_code == 400
+    assert res.json()["code"] == "session_not_active"
+    assert list(tmp_selfie_storage.glob("*")) == []
+
+
+def test_selfie_only_expired_session(client, db_session, tmp_selfie_storage):
+    admin_h = admin_token(client, db_session)
+    session = create_session(client, admin_h).json()
+    row = db_session.get(AttendanceSession, session["id"])
+    row.expires_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+
+    stu_h = student_token(client, db_session)
+    res = selfie_scan(client, stu_h, session["id"])
+    assert res.status_code == 400
+    assert res.json()["code"] == "qr_expired"
+    assert list(tmp_selfie_storage.glob("*")) == []
+
+
+def test_live_sessions_endpoint(client, db_session):
+    admin_h = admin_token(client, db_session)
+    live = create_session(client, admin_h).json()
+    expired = create_session(client, admin_h, subject="Networks").json()
+    row = db_session.get(AttendanceSession, expired["id"])
+    row.expires_at = datetime.now() - timedelta(seconds=1)
+    db_session.commit()
+
+    stu_h = student_token(client, db_session)
+    data = client.get("/api/student/attendance/live-sessions", headers=stu_h).json()
+    ids = {s["id"] for s in data["sessions"]}
+    assert live["id"] in ids
+    assert expired["id"] not in ids
+
+
 def test_scan_missing_selfie_rejected(client, db_session):
     admin_h = admin_token(client, db_session)
     session = create_session(client, admin_h).json()

@@ -308,15 +308,32 @@ document.getElementById("create-btn").addEventListener("click", openDrawer);
 document.getElementById("create-form").addEventListener("submit", handleCreate);
 document.getElementById("add-student-form").addEventListener("submit", addStudent);
 document.getElementById("filter-btn").addEventListener("click", loadSessions);
-document.getElementById("export-btn").addEventListener("click", () => {
-  const date = document.getElementById("filter-date").value;
-  const subject = document.getElementById("filter-subject").value;
-  const faculty = document.getElementById("filter-faculty").value;
-  const params = new URLSearchParams();
-  if (date) params.set("session_date", date);
-  if (subject) params.set("subject", subject);
-  if (faculty) params.set("faculty", faculty);
-  window.location.href = `/api/admin/export?${params.toString()}`;
+document.getElementById("export-btn").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    const date = document.getElementById("filter-date").value;
+    const subject = document.getElementById("filter-subject").value;
+    const faculty = document.getElementById("filter-faculty").value;
+    const params = new URLSearchParams();
+    if (date) params.set("session_date", date);
+    if (subject) params.set("subject", subject);
+    if (faculty) params.set("faculty", faculty);
+    const blob = await API.fetchBlob(`/api/admin/export?${params.toString()}`);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "attendance_export.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Export downloaded", "ok");
+  } catch (err) {
+    showToast(err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
 });
 document.getElementById("student-search").addEventListener("input", debounce(loadStudents, 300));
 

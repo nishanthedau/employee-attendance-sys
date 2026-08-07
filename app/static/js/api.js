@@ -28,8 +28,24 @@ const API = {
     return this._send("POST", path, headers, formData);
   },
   async fetchBlob(path) {
-    const res = await fetch(path, { headers: { Authorization: `Bearer ${this.token()}` } });
-    if (!res.ok) throw new Error("Couldn't load the image. Try again.");
+    let res;
+    try {
+      res = await fetch(path, { headers: { Authorization: `Bearer ${this.token()}` } });
+    } catch {
+      throw new Error("Can't reach the server. Check your internet connection and try again.");
+    }
+    if (res.status === 401) {
+      this.clear();
+      window.location.href = "/login";
+      throw new Error("Your session has expired. Please sign in again.");
+    }
+    if (!res.ok) {
+      let data = {};
+      try {
+        data = await res.json();
+      } catch {}
+      throw new Error(this.friendlyError(res.status, data));
+    }
     return await res.blob();
   },
   async _send(method, path, headers, payload) {
