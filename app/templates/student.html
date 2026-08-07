@@ -45,24 +45,42 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
       Scan QR Code
     </button>
-    <p class="center faint small mt-8">Camera opens — point it at your faculty's QR. Location will be checked.</p>
+    <p class="center faint small mt-8">Camera opens — point it at your faculty's QR. A selfie and your location are checked on mark.</p>
   </div>
 
   <!-- Scan overlay -->
   <div class="overlay" id="scan-overlay">
     <div class="overlay-panel">
       <div class="overlay-head">
-        <h3>Scan QR</h3>
+        <h3 id="scan-title">Scan QR</h3>
         <button class="close" onclick="closeScan()">&times;</button>
       </div>
-      <div id="scan-msg" class="alert hidden"></div>
-      <div class="scan-region" id="qr-reader"></div>
-      <p class="muted small center mt-8">Align the QR inside the frame.</p>
-      <hr class="divider" />
-      <p class="faint small">Camera blocked? Paste the QR payload instead:</p>
-      <div class="flex mt-8">
-        <input class="input grow" id="manual-payload" placeholder='{"session_id": 1, "qr_token": "…"}' />
-        <button class="btn" id="manual-btn">Scan</button>
+
+      <div id="qr-step">
+        <div id="scan-msg" class="alert hidden"></div>
+        <div class="scan-region" id="qr-reader"></div>
+        <p class="muted small center mt-8">Align the QR inside the frame.</p>
+        <hr class="divider" />
+        <p class="faint small">Camera blocked? Paste the QR payload instead:</p>
+        <div class="flex mt-8">
+          <input class="input grow" id="manual-payload" placeholder='{"session_id": 1, "qr_token": "…"}' />
+          <button class="btn" id="manual-btn">Scan</button>
+        </div>
+      </div>
+
+      <div id="selfie-step" class="hidden">
+        <p class="small muted" style="margin-bottom: 12px;">Last step — take a quick selfie to confirm it's you. Location will be checked too.</p>
+        <div class="selfie-box">
+          <video id="selfie-video" autoplay playsinline muted></video>
+          <canvas id="selfie-canvas" class="hidden"></canvas>
+          <img id="selfie-preview" class="hidden" alt="Your selfie" />
+        </div>
+        <div id="selfie-msg" class="alert err hidden"></div>
+        <div class="flex mt-16">
+          <button class="btn ghost grow hidden" id="retake-btn" onclick="retakeSelfie()">Retake</button>
+          <button class="btn grow" id="capture-btn" onclick="captureSelfie()">Capture</button>
+          <button class="btn grow hidden" id="confirm-btn" onclick="submitWithSelfie()">Confirm &amp; Mark</button>
+        </div>
       </div>
     </div>
   </div>

@@ -205,19 +205,34 @@ function showHistory(id) {
     const body = document.getElementById("history-body");
     body.innerHTML = data.records.length
       ? ""
-      : `<tr><td colspan="3" class="center muted">No attendance marked yet</td></tr>`;
+      : `<tr><td colspan="4" class="center muted">No attendance marked yet</td></tr>`;
     for (const r of data.records) {
+      const selfie = r.has_selfie
+        ? `<button class="btn ghost sm" onclick="viewSelfie(${r.id}, '${esc(r.student_name)}')">View</button>`
+        : `<span class="faint small">—</span>`;
       body.insertAdjacentHTML(
         "beforeend",
         `<tr>
           <td style="font-weight:600;">${esc(r.student_name)}</td>
           <td class="num muted">${r.scan_time}</td>
           <td><span class="pill ok">${r.status}</span></td>
+          <td>${selfie}</td>
         </tr>`
       );
     }
     document.getElementById("history-qr-btn").onclick = () => showQr(id, data.session.subject);
     overlays.open("history-overlay");
+  }).catch((e) => showToast(e.message, "err"));
+}
+
+function viewSelfie(recordId, name) {
+  document.getElementById("selfie-view-name").textContent = name;
+  const img = document.getElementById("selfie-view-img");
+  API.fetchBlob(`/api/admin/selfie/${recordId}`).then((blob) => {
+    if (img._objUrl) URL.revokeObjectURL(img._objUrl);
+    img._objUrl = URL.createObjectURL(blob);
+    img.src = img._objUrl;
+    overlays.open("selfie-overlay");
   }).catch((e) => showToast(e.message, "err"));
 }
 

@@ -84,6 +84,7 @@ class AttendanceRecord(Base):
     scan_time: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.now)
     latitude: Mapped[float] = mapped_column(nullable=False)
     longitude: Mapped[float] = mapped_column(nullable=False)
+    selfie_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="present")
 
     student: Mapped[User] = relationship(back_populates="records")

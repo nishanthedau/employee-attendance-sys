@@ -20,13 +20,22 @@ const API = {
   async request(method, path, body) {
     const headers = { "Content-Type": "application/json" };
     if (this.token()) headers.Authorization = `Bearer ${this.token()}`;
+    return this._send(method, path, headers, body ? JSON.stringify(body) : undefined);
+  },
+  async postForm(path, formData) {
+    const headers = {};
+    if (this.token()) headers.Authorization = `Bearer ${this.token()}`;
+    return this._send("POST", path, headers, formData);
+  },
+  async fetchBlob(path) {
+    const res = await fetch(path, { headers: { Authorization: `Bearer ${this.token()}` } });
+    if (!res.ok) throw new Error("Couldn't load the image. Try again.");
+    return await res.blob();
+  },
+  async _send(method, path, headers, payload) {
     let res;
     try {
-      res = await fetch(path, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-      });
+      res = await fetch(path, { method, headers, body: payload });
     } catch {
       throw new Error("Can't reach the server. Check your internet connection and try again.");
     }
@@ -129,11 +138,7 @@ function fmtDate(iso) {
 // <img> tags can't send the Authorization header, so fetch the QR as a blob
 // (blob is revoked on next load to avoid leaking memory).
 async function loadQrImage(sessionId, imgEl) {
-  const res = await fetch(`/api/admin/attendance/qr?session_id=${sessionId}`, {
-    headers: { Authorization: `Bearer ${API.token()}` },
-  });
-  if (!res.ok) throw new Error("Couldn't load the QR code. Try again.");
-  const blob = await res.blob();
+  const blob = await API.fetchBlob(`/api/admin/attendance/qr?session_id=${sessionId}`);
   if (imgEl._objUrl) URL.revokeObjectURL(imgEl._objUrl);
   imgEl._objUrl = URL.createObjectURL(blob);
   imgEl.src = imgEl._objUrl;

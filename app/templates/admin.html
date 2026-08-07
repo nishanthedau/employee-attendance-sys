@@ -181,10 +181,21 @@
       </div>
       <div class="table-wrap" style="max-height: 320px; overflow-y: auto;">
         <table class="table">
-          <thead><tr><th>Student</th><th>Scanned at</th><th>Status</th></tr></thead>
+          <thead><tr><th>Student</th><th>Scanned at</th><th>Status</th><th>Selfie</th></tr></thead>
           <tbody id="history-body"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- Selfie viewer -->
+  <div class="overlay" id="selfie-overlay">
+    <div class="overlay-panel" style="width: min(380px, 100%); text-align: center;">
+      <div class="overlay-head">
+        <h3 id="selfie-view-name">Selfie</h3>
+        <button class="close" onclick="closeOverlay('selfie-overlay')">&times;</button>
+      </div>
+      <img id="selfie-view-img" class="selfie-view" alt="Student selfie" />
     </div>
   </div>
 

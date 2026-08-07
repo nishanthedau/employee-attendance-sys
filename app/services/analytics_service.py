@@ -96,6 +96,7 @@ def export_csv(db: Session, subject: str | None = None, day: date | None = None)
             AttendanceSession.end_time,
             AttendanceRecord.latitude,
             AttendanceRecord.longitude,
+            AttendanceRecord.selfie_path,
             AttendanceRecord.status,
         )
         .join(User, AttendanceRecord.student_id == User.id)
@@ -123,6 +124,7 @@ def export_csv(db: Session, subject: str | None = None, day: date | None = None)
             "end",
             "latitude",
             "longitude",
+            "selfie",
             "status",
         ]
     )
@@ -139,7 +141,8 @@ def export_csv(db: Session, subject: str | None = None, day: date | None = None)
                 row[7].strftime("%H:%M"),
                 row[8],
                 row[9],
-                row[10],
+                "yes" if row[10] else "no",
+                row[11],
             ]
         )
     return buffer.getvalue()

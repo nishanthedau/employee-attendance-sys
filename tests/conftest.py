@@ -46,3 +46,12 @@ def reset_rate_limits():
     LOGIN_LIMIT._hits.clear()
     SCAN_LIMIT._hits.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def tmp_selfie_storage(tmp_path, monkeypatch):
+    from app.core import storage
+
+    target = tmp_path / "selfies"
+    monkeypatch.setattr(storage, "_selfies_dir", lambda: target)
+    yield target

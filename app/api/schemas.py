@@ -52,10 +52,3 @@ class StudentCreateRequest(BaseModel):
         if not self.name:
             raise ValueError("Name can't be blank.")
         return self
-
-
-class ScanRequest(BaseModel):
-    session_id: int
-    qr_token: str = Field(min_length=1, max_length=128)
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)

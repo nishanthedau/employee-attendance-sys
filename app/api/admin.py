@@ -1,12 +1,14 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_admin
 from app.api.schemas import SessionCreateRequest, StudentCreateRequest
+from app.core.storage import selfie_path
 from app.core.time import local_iso
 from app.db.database import get_db
 from app.models.entities import AttendanceRecord, AttendanceSession, Role, User
@@ -68,6 +70,22 @@ def get_qr(session_id: int = Query(...), admin: User = Depends(require_admin), d
         media_type="image/png",
         headers={"Cache-Control": "no-store"},
     )
+
+
+@router.get("/selfie/{record_id}")
+def get_selfie(
+    record_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    record = db.get(AttendanceRecord, record_id)
+    if not record or not record.selfie_path:
+        raise HTTPException(status_code=404, detail="No selfie for this record.")
+    path = selfie_path(record.selfie_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Selfie file is missing.")
+    media_type = "image/png" if record.selfie_path.endswith(".png") else "image/jpeg"
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/dashboard")
@@ -134,11 +152,13 @@ def history(
         "marked": len(records),
         "records": [
             {
+                "id": r.id,
                 "student_id": u.id,
                 "student_name": u.name,
                 "email": u.email,
                 "scan_time": r.scan_time.strftime("%Y-%m-%d %H:%M:%S"),
                 "status": r.status,
+                "has_selfie": bool(r.selfie_path),
             }
             for u, r in records
         ],

@@ -48,6 +48,16 @@ def _create_database() -> None:
     print(f"database `{settings.db_name}` ready")
 
 
+def _ensure_selfie_column() -> None:
+    with engine.connect() as conn:
+        existing = conn.execute(
+            text("SHOW COLUMNS FROM attendance_records LIKE 'selfie_path'")
+        ).fetchall()
+        if not existing:
+            conn.execute(text("ALTER TABLE attendance_records ADD COLUMN selfie_path VARCHAR(255) NULL"))
+    print("attendance_records.selfie_path ready")
+
+
 def _seed() -> None:
     Session = sessionmaker(bind=engine, expire_on_commit=False)
     with Session() as db:
@@ -80,4 +90,5 @@ if __name__ == "__main__":
     _create_database()
     Base.metadata.create_all(bind=engine)
     print("tables created")
+    _ensure_selfie_column()
     _seed()

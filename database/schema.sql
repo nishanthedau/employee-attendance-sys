@@ -44,13 +44,14 @@ CREATE TABLE IF NOT EXISTS attendance_sessions (
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS attendance_records (
-    id         INT AUTO_INCREMENT PRIMARY KEY,
-    student_id INT          NOT NULL,
-    session_id INT          NOT NULL,
-    scan_time  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    latitude   DECIMAL(10,7) NOT NULL,
-    longitude  DECIMAL(10,7) NOT NULL,
-    status     VARCHAR(20)  NOT NULL DEFAULT 'present',
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    student_id  INT          NOT NULL,
+    session_id  INT          NOT NULL,
+    scan_time   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    latitude    DECIMAL(10,7) NOT NULL,
+    longitude   DECIMAL(10,7) NOT NULL,
+    selfie_path VARCHAR(255) NULL,
+    status      VARCHAR(20)  NOT NULL DEFAULT 'present',
     CONSTRAINT fk_record_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_record_session FOREIGN KEY (session_id) REFERENCES attendance_sessions(id) ON DELETE CASCADE,
     CONSTRAINT uq_student_session UNIQUE (student_id, session_id),

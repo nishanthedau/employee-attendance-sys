@@ -86,21 +86,22 @@ def scan_attendance(
     lat: float,
     lng: float,
     now: datetime | None = None,
+    selfie_path: str | None = None,
 ) -> AttendanceRecord:
-    """Validate and record a student scan. Checks, in order:
-    QR exists/token matches, QR not expired, session active, no duplicate, GPS within radius."""
+    """Validate and record a student scan. Checks, in order: QR exists/token matches,
+    session active window, QR not expired, no duplicate, GPS within radius."""
     now = now or datetime.now()
 
     session = db.get(AttendanceSession, session_id)
     if not session or not secrets.compare_digest(session.qr_token, qr_token):
         raise SessionError("This QR code isn't valid for this class.", code="invalid_qr")
-    if session.expires_at < now:
-        raise SessionError("This QR code has expired. Ask your teacher for a fresh one.", code="qr_expired")
     if not is_session_active(session, now):
         raise SessionError(
             "This session isn't open right now. Try again during the class time.",
             code="session_not_active",
         )
+    if session.expires_at < now:
+        raise SessionError("This QR code has expired. Ask your teacher for a fresh one.", code="qr_expired")
 
     existing = db.execute(
         select(AttendanceRecord).where(
@@ -125,6 +126,7 @@ def scan_attendance(
         scan_time=now,
         latitude=lat,
         longitude=lng,
+        selfie_path=selfie_path,
         status="present",
     )
     db.add(record)

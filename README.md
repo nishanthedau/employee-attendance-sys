@@ -1,8 +1,9 @@
 # QR-Based Attendance Management System
 
-Secure web attendance: students mark attendance by scanning a QR code. Identity comes from
-the authenticated session (never from the scan), GPS is re-verified server-side, duplicates and
-QR replay are blocked, and admins get a dashboard + CSV export.
+Secure web attendance: students mark attendance by scanning a QR code **and taking a
+selfie** from their browser. Identity comes from the authenticated session (never from
+the scan), the selfie photo is validated and stored, GPS is re-verified server-side,
+duplicates and QR replay are blocked, and admins get a dashboard + CSV export.
 
 Built with **FastAPI + SQLAlchemy + MySQL** on the back and a **minimalist dark UI**
 (vanilla HTML/CSS/JS, no framework) on the front.
@@ -32,11 +33,13 @@ Open http://localhost:8000
 
 1. **Admin** logs in → **New Session** (subject, faculty, date, time window, coordinates,
    radius, QR expiry) → **Show QR**.
-2. **Student** logs in → **Scan QR Code** → camera scans the QR → browser geolocation →
-   server validates QR token, expiry, session window, duplicate, then Haversine distance
-   vs. session radius → attendance stored.
-3. **Admin** sees today's stats, sessions, history per session, search, filters, CSV export.
-   **Student** sees only the current week (Mon–Sun).
+2. **Student** logs in → **Scan QR Code** → camera scans the QR → camera flips to a **selfie**
+   capture step (preview → confirm) → browser geolocation → the selfie + coordinates are
+   uploaded as `multipart/form-data` → server validates the selfie (type/size/magic bytes),
+   QR token, expiry, session window, duplicate, then Haversine distance vs. session radius →
+   attendance stored with the photo path.
+3. **Admin** sees today's stats, sessions, history per session (with a **Selfie** button per
+   record), search, filters, CSV export. **Student** sees only the current week (Mon–Sun).
 
 ## Structure
 
@@ -44,7 +47,7 @@ Open http://localhost:8000
 attendance-system/
 ├── app/
 │   ├── api/            # routers: auth, student, admin + deps, schemas
-│   ├── core/           # config (.env), logging
+│   ├── core/           # config (.env), logging, rate limiting, tz helpers, selfie storage
 │   ├── db/             # SQLAlchemy engine + session
 │   ├── models/         # ORM entities
 │   ├── services/       # auth, geo (Haversine), sessions, qr, analytics
@@ -52,8 +55,8 @@ attendance-system/
 │   ├── templates/      # login/admin/student pages
 │   └── main.py         # FastAPI app + page serving
 ├── database/schema.sql # reference DDL
-├── scripts/init_db.py  # create DB, tables, seed
-└── storage/            # logs, exports
+├── scripts/init_db.py  # create DB, tables (incl. selfie_path migration), seed
+└── storage/            # logs, exports, selfies
 ```
 
 ## API
@@ -69,7 +72,10 @@ attendance-system/
 | `GET  /api/admin/attendance/history`  | admin   | per-session records (`session_id`) |
 | `GET  /api/admin/export`              | admin   | CSV, filters `subject`/`session_date` |
 | `GET  /api/admin/students`            | admin   | search `q`                         |
-| `POST /api/student/attendance/scan`   | student | QR + GPS validation                |
+| `POST /api/admin/students`            | admin   | add student (409 on duplicate)     |
+| `DELETE /api/admin/students/{id}`     | admin   | remove student + records           |
+| `GET  /api/admin/selfie/{record_id}`  | admin   | student selfie image (PNG/JPEG)    |
+| `POST /api/student/attendance/scan`   | student | multipart: session_id, qr_token, latitude, longitude, selfie |
 | `GET  /api/student/attendance/current-week` | student | Mon–Sun this week only     |
 
 Interactive docs at http://localhost:8000/docs
@@ -81,4 +87,6 @@ Interactive docs at http://localhost:8000/docs
 - Duplicate prevention: unique `(student_id, session_id)` constraint + transactional check
 - Session window (`date`, `start_time`, `end_time`) enforced server-side
 - GPS verified with Haversine; identity from token, coordinates never trusted from client
+- Selfie required with every scan: type (JPG/PNG), size (≤ 2 MB), and magic bytes validated;
+  photos stored under `storage/selfies/` and served only via the admin-only `/api/admin/selfie/{id}`
 - All SQL via SQLAlchemy prepared statements; role checks on every admin route

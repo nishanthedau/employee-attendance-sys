@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     db_user: str = "root"
     db_password: str = ""
 
+    selfie_storage_dir: str = ""
+
     @property
     def database_url(self) -> str:
         return (
