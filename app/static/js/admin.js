@@ -63,7 +63,7 @@ async function loadSessions() {
     ? ""
     : `<tr><td colspan="7" class="center muted">No sessions found</td></tr>`;
   for (const s of sessions) {
-    const live = s.qr_expires_at && new Date(s.qr_expires_at) > new Date();
+    const live = s.live === true;
     const status = live ? `<span class="pill-live">live</span>` : `<span class="pill-dead">expired</span>`;
     body.insertAdjacentHTML(
       "beforeend",
@@ -172,22 +172,22 @@ function showQr(id, subject) {
   const countdown = document.getElementById("qr-countdown");
   meta.textContent = `Session #${id} · ${subject}`;
 
-  const paint = (expiresAt) => {
+  const paint = (live, deadline) => {
     loadQrImage(id, img).catch((e) => {
       status.className = "pill-dead";
       status.textContent = "unavailable";
       countdown.textContent = e.message;
     });
-    if (expiresAt && new Date(expiresAt) > new Date()) {
+    if (live && deadline && new Date(deadline) > new Date()) {
       status.className = "pill-live";
       status.textContent = "live";
       qrTimer = setInterval(() => {
-        const left = new Date(expiresAt) - Date.now();
+        const left = new Date(deadline) - Date.now();
         if (left <= 0) {
           clearInterval(qrTimer);
           status.className = "pill-dead";
           status.textContent = "expired";
-          countdown.textContent = "QR expired — create a new session";
+          countdown.textContent = "Session closed — create a new session";
           return;
         }
         const m = Math.floor(left / 60000);
@@ -197,17 +197,17 @@ function showQr(id, subject) {
     } else {
       status.className = "pill-dead";
       status.textContent = "expired";
-      countdown.textContent = "QR expired — create a new session";
+      countdown.textContent = "Session closed — create a new session";
     }
   };
 
-  // Re-query the session so qr_expires_at is fresh when reopening a row.
+  // Re-query the session so live/deadline are fresh when reopening a row.
   // NOTE: never send empty query params — FastAPI 422s on empty date strings.
   API.get("/api/admin/sessions").then((data) => {
     const sessions = data.sessions || [];
     const s = sessions.find((x) => x.id === id);
-    paint(s ? s.qr_expires_at : null);
-  }).catch(() => paint(null));
+    paint(s ? s.live === true : false, s ? s.deadline : null);
+  }).catch(() => paint(false, null));
 
   overlays.open("qr-overlay");
 }

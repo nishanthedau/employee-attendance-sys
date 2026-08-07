@@ -78,6 +78,15 @@ def is_session_active(session: AttendanceSession, now: datetime) -> bool:
     return start <= now <= end
 
 
+def markable_state(session: AttendanceSession, when: datetime) -> tuple[bool, datetime]:
+    """Whether a session is markable right now (window active + QR not expired),
+    and the effective deadline = whichever comes first: QR expiry or the end of
+    the session window. A QR must never appear live after the class window."""
+    end = datetime.combine(session.date, session.end_time)
+    deadline = min(session.expires_at, end)
+    return is_session_active(session, when) and session.expires_at > when, deadline
+
+
 def validate_scan(
     db: Session,
     session_id: int,

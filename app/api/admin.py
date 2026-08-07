@@ -9,18 +9,19 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import require_admin
 from app.api.schemas import SessionCreateRequest, StudentCreateRequest
 from app.core.storage import selfie_path
-from app.core.time import local_iso
+from app.core.time import local_iso, now
 from app.db.database import get_db
 from app.models.entities import AttendanceRecord, AttendanceSession, Role, User
 from app.services.analytics_service import dashboard_stats, export_csv, faculty_options, subject_options
 from app.services.auth_service import create_user
 from app.services.qr_service import render_session_qr
-from app.services.session_service import CreateSessionData, validate_and_create
+from app.services.session_service import CreateSessionData, markable_state, validate_and_create
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 def _session_dict(s: AttendanceSession) -> dict:
+    live, deadline = markable_state(s, now())
     return {
         "id": s.id,
         "subject": s.subject,
@@ -33,6 +34,8 @@ def _session_dict(s: AttendanceSession) -> dict:
         "radius_meters": s.radius_meters,
         "marked": len(s.records),
         "qr_expires_at": local_iso(s.expires_at),
+        "live": live,
+        "deadline": local_iso(deadline),
     }
 
 
