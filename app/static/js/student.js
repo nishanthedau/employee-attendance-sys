@@ -124,7 +124,7 @@ function cameraError(e, msgEl) {
   if (name === "NotAllowedError") {
     msg = "Camera permission denied. Allow camera for this site: tap the aA/lock icon by the URL → Camera → Allow, then retry.";
   } else if (name === "NotFoundError") {
-    msg = "No camera found on this device. Use the manual payload box instead.";
+    msg = "No camera found on this device. Reload and try again, or use the pick-from-list option.";
   } else if (name === "NotReadableError") {
     msg = "Camera is busy or unavailable (another app may be using it).";
   } else if (name === "OverconstrainedError") {
@@ -137,11 +137,11 @@ async function startScanner() {
   const msgEl = document.getElementById("scan-msg");
   showAlert(msgEl, "blank", "");
   if (!window.Html5Qrcode) {
-    showAlert(msgEl, "err", "QR scanner library failed to load. Use the manual payload box below.");
+    showAlert(msgEl, "err", "QR scanner library failed to load. Reload the page and try again.");
     return;
   }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showAlert(msgEl, "err", "This browser has no camera API (camera needs HTTPS + a modern browser). Use the manual payload box below.");
+    showAlert(msgEl, "err", "This browser has no camera API (camera needs HTTPS + a modern browser). Reload and try again.");
     return;
   }
 
@@ -164,7 +164,7 @@ async function startScanner() {
     await new Promise((r) => setTimeout(r, 120));
     const region = document.getElementById("qr-reader");
     if (!region.clientWidth || !region.clientHeight) {
-      showAlert(msgEl, "err", "Scanner area has no size — resize or retry. Use the manual payload box if it persists.");
+      showAlert(msgEl, "err", "Scanner area has no size — resize or retry.");
       return;
     }
     scanner = new Html5Qrcode("qr-reader");
@@ -343,11 +343,6 @@ async function submitWithSelfie() {
 
 document.getElementById("scan-btn").addEventListener("click", openScan);
 document.getElementById("selfie-only-btn").addEventListener("click", openSelfieOnly);
-document.getElementById("manual-btn").addEventListener("click", () => {
-  const raw = document.getElementById("manual-payload").value.trim();
-  if (!raw) return;
-  processPayload(raw);
-});
 
 (async () => {
   await guard();

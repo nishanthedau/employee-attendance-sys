@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Employee · Attendance</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/css/app.css?v=2" />
+  <link rel="stylesheet" href="/static/css/app.css?v=3" />
 </head>
 <body>
   <nav class="topbar">
@@ -64,12 +64,6 @@
         <div id="scan-msg" class="alert hidden"></div>
         <div class="scan-region" id="qr-reader"></div>
         <p class="muted small center mt-8">Align the QR inside the frame.</p>
-        <hr class="divider" />
-        <p class="faint small">Camera blocked? Paste the QR payload instead:</p>
-        <div class="flex mt-8">
-          <input class="input grow" id="manual-payload" placeholder='{"session_id": 1, "qr_token": "…"}' />
-          <button class="btn" id="manual-btn">Scan</button>
-        </div>
       </div>
 
       <div id="pick-step" class="hidden">
@@ -96,7 +90,7 @@
   </div>
 
   <script src="/static/js/vendor/html5-qrcode.min.js"></script>
-  <script src="/static/js/api.js?v=2"></script>
-  <script src="/static/js/student.js?v=2"></script>
+  <script src="/static/js/api.js?v=3"></script>
+  <script src="/static/js/student.js?v=3"></script>
 </body>
 </html>
