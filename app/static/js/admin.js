@@ -51,9 +51,11 @@ async function loadStats() {
 async function loadSessions() {
   const date = document.getElementById("filter-date").value;
   const subject = document.getElementById("filter-subject").value;
+  const faculty = document.getElementById("filter-faculty").value;
   const params = new URLSearchParams();
   if (date) params.set("session_date", date);
   if (subject) params.set("subject", subject);
+  if (faculty) params.set("faculty", faculty);
   const data = await API.get(`/api/admin/sessions?${params.toString()}`);
   const sessions = data.sessions || [];
   const body = document.getElementById("sessions-body");
@@ -89,6 +91,19 @@ async function loadSubjects() {
       const opt = document.createElement("option");
       opt.value = s;
       opt.textContent = s;
+      sel.appendChild(opt);
+    }
+  } catch {}
+}
+
+async function loadFaculties() {
+  try {
+    const data = await API.get("/api/admin/faculties");
+    const sel = document.getElementById("filter-faculty");
+    for (const f of data.faculties) {
+      const opt = document.createElement("option");
+      opt.value = f;
+      opt.textContent = f;
       sel.appendChild(opt);
     }
   } catch {}
@@ -296,9 +311,11 @@ document.getElementById("filter-btn").addEventListener("click", loadSessions);
 document.getElementById("export-btn").addEventListener("click", () => {
   const date = document.getElementById("filter-date").value;
   const subject = document.getElementById("filter-subject").value;
+  const faculty = document.getElementById("filter-faculty").value;
   const params = new URLSearchParams();
   if (date) params.set("session_date", date);
   if (subject) params.set("subject", subject);
+  if (faculty) params.set("faculty", faculty);
   window.location.href = `/api/admin/export?${params.toString()}`;
 });
 document.getElementById("student-search").addEventListener("input", debounce(loadStudents, 300));
@@ -306,7 +323,7 @@ document.getElementById("student-search").addEventListener("input", debounce(loa
 (async () => {
   await guard();
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadStudents()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents()]);
   } catch (err) {
     showToast(err.message, "err");
   }

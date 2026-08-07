@@ -456,3 +456,53 @@ def test_export_csv_subject_filter(client, db_session):
     assert filtered.status_code == 200
     assert "Networks" in filtered.text
     assert "DBMS" not in filtered.text.split("scan_time")[1]
+
+
+def test_export_csv_faculty_filter(client, db_session):
+    headers = admin_token(client, db_session)
+    create_session(client, headers, subject="DBMS", faculty="Prof. Rao")
+    networks = create_session(client, headers, subject="Networks", faculty="Dr. Gupta").json()
+
+    stu_h = student_token(client, db_session)
+    scan(client, stu_h, networks["id"], session_qr_token(db_session, networks["id"]))
+
+    filtered = client.get("/api/admin/export?faculty=Dr.%20Gupta", headers=headers)
+    assert filtered.status_code == 200
+    assert "Networks" in filtered.text
+    assert "Prof. Rao" not in filtered.text
+
+
+def test_export_csv_date_filter(client, db_session):
+    headers = admin_token(client, db_session)
+    today_sess = create_session(client, headers, date=date.today().isoformat()).json()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    later = create_session(client, headers, subject="Networks", date=tomorrow).json()
+
+    stu_h = student_token(client, db_session)
+    scan(client, stu_h, today_sess["id"], session_qr_token(db_session, today_sess["id"]))
+    scan(client, stu_h, later["id"], session_qr_token(db_session, later["id"]))
+
+    filtered = client.get(f"/api/admin/export?session_date={date.today().isoformat()}", headers=headers)
+    assert filtered.status_code == 200
+    assert "DBMS" in filtered.text
+    assert "Networks" not in filtered.text.split("scan_time")[1]
+
+
+def test_faculties_endpoint(client, db_session):
+    headers = admin_token(client, db_session)
+    create_session(client, headers, faculty="Prof. Rao")
+    create_session(client, headers, subject="Networks", faculty="Dr. Gupta")
+
+    data = client.get("/api/admin/faculties", headers=headers).json()
+    assert "Prof. Rao" in data["faculties"]
+    assert "Dr. Gupta" in data["faculties"]
+
+
+def test_sessions_faculty_filter(client, db_session):
+    headers = admin_token(client, db_session)
+    create_session(client, headers, faculty="Prof. Rao")
+    create_session(client, headers, subject="Networks", faculty="Dr. Gupta")
+
+    data = client.get("/api/admin/sessions?faculty=Dr.%20Gupta", headers=headers).json()
+    assert len(data["sessions"]) == 1
+    assert data["sessions"][0]["faculty"] == "Dr. Gupta"

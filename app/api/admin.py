@@ -12,7 +12,7 @@ from app.core.storage import selfie_path
 from app.core.time import local_iso
 from app.db.database import get_db
 from app.models.entities import AttendanceRecord, AttendanceSession, Role, User
-from app.services.analytics_service import dashboard_stats, export_csv, subject_options
+from app.services.analytics_service import dashboard_stats, export_csv, faculty_options, subject_options
 from app.services.auth_service import create_user
 from app.services.qr_service import render_session_qr
 from app.services.session_service import CreateSessionData, validate_and_create
@@ -96,6 +96,7 @@ def dashboard(admin: User = Depends(require_admin), db: Session = Depends(get_db
 @router.get("/sessions")
 def list_sessions(
     subject: str | None = Query(default=None),
+    faculty: str | None = Query(default=None),
     session_date: date | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -105,6 +106,8 @@ def list_sessions(
     query = select(AttendanceSession).options(selectinload(AttendanceSession.records))
     if subject:
         query = query.where(AttendanceSession.subject == subject)
+    if faculty:
+        query = query.where(AttendanceSession.faculty == faculty)
     if session_date:
         query = query.where(AttendanceSession.date == session_date)
     total = db.execute(select(func.count()).select_from(query.subquery())).scalar() or 0
@@ -125,6 +128,11 @@ def list_sessions(
 @router.get("/subjects")
 def subjects(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     return {"subjects": subject_options(db)}
+
+
+@router.get("/faculties")
+def faculties(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    return {"faculties": faculty_options(db)}
 
 
 @router.get("/attendance/history")
@@ -205,11 +213,12 @@ def remove_student(student_id: int, admin: User = Depends(require_admin), db: Se
 @router.get("/export")
 def export(
     subject: str | None = Query(default=None),
+    faculty: str | None = Query(default=None),
     session_date: date | None = Query(default=None),
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    csv_data = export_csv(db, subject=subject, day=session_date)
+    csv_data = export_csv(db, subject=subject, day=session_date, faculty=faculty)
     return Response(
         content=csv_data,
         media_type="text/csv; charset=utf-8",

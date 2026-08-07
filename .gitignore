@@ -10,6 +10,7 @@ wheels/
 .venv
 .env
 storage/logs/*.log
+storage/logs/*.out
 storage/exports/*.csv
 storage/selfies/*
 

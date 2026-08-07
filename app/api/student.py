@@ -6,7 +6,7 @@ from app.core.storage import delete_selfie, save_selfie
 from app.db.database import get_db
 from app.models.entities import User
 from app.services.analytics_service import current_week
-from app.services.session_service import scan_attendance
+from app.services.session_service import record_scan, validate_scan
 
 router = APIRouter(prefix="/api/student", tags=["student"])
 
@@ -22,24 +22,19 @@ def scan(
     db: Session = Depends(get_db),
     _rate: None = Depends(enforce_rate_limit(SCAN_LIMIT)),
 ):
-    """Mark attendance for the authenticated student — server re-verifies QR,
-    expiry, session window, duplicates, and GPS. The identity comes from the
-    bearer token, never from client input. A selfie photo is required and is
-    validated (type/size/magic bytes) and stored on disk before the checks run."""
+    """Mark attendance for the authenticated student.
+
+    All cheap validations (QR token, session window, QR expiry, duplicate, GPS
+    radius) run *before* the selfie is written to disk, so a rejected scan never
+    leaves an orphaned photo. Identity comes from the bearer token, never from
+    client input."""
+    session = validate_scan(db, session_id, qr_token, student, latitude, longitude)
     filename = save_selfie(selfie)
     try:
-        record = scan_attendance(
-            db,
-            session_id=session_id,
-            qr_token=qr_token,
-            student=student,
-            lat=latitude,
-            lng=longitude,
-            selfie_path=filename,
-        )
+        record = record_scan(db, session, student, latitude, longitude, filename)
     except Exception:
-        # Any validation failure after the file was written must not leak
-        # orphaned photos on disk.
+        # Persistence failed (e.g. a concurrent duplicate scan hit the unique
+        # constraint) — the photo was already written, so clean it up.
         delete_selfie(filename)
         raise
     return {

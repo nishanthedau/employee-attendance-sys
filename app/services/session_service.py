@@ -78,7 +78,7 @@ def is_session_active(session: AttendanceSession, now: datetime) -> bool:
     return start <= now <= end
 
 
-def scan_attendance(
+def validate_scan(
     db: Session,
     session_id: int,
     qr_token: str,
@@ -86,10 +86,13 @@ def scan_attendance(
     lat: float,
     lng: float,
     now: datetime | None = None,
-    selfie_path: str | None = None,
-) -> AttendanceRecord:
-    """Validate and record a student scan. Checks, in order: QR exists/token matches,
-    session active window, QR not expired, no duplicate, GPS within radius."""
+) -> AttendanceSession:
+    """Run all inexpensive attendance checks *before* any selfie is persisted.
+
+    Order: QR exists/token matches → session active window → QR not expired →
+    no duplicate → GPS within radius. Returns the validated session on success,
+    raises ``SessionError`` otherwise.
+    """
     now = now or datetime.now()
 
     session = db.get(AttendanceSession, session_id)
@@ -120,6 +123,21 @@ def scan_attendance(
             code="outside_zone",
         )
 
+    return session
+
+
+def record_scan(
+    db: Session,
+    session: AttendanceSession,
+    student: User,
+    lat: float,
+    lng: float,
+    selfie_path: str | None = None,
+    now: datetime | None = None,
+) -> AttendanceRecord:
+    """Persist an already-validated scan. The unique (student, session)
+    constraint is the race-condition backstop for concurrent duplicate scans."""
+    now = now or datetime.now()
     record = AttendanceRecord(
         student_id=student.id,
         session_id=session.id,
@@ -140,3 +158,20 @@ def scan_attendance(
         ) from None
     db.refresh(record)
     return record
+
+
+def scan_attendance(
+    db: Session,
+    session_id: int,
+    qr_token: str,
+    student: User,
+    lat: float,
+    lng: float,
+    now: datetime | None = None,
+    selfie_path: str | None = None,
+) -> AttendanceRecord:
+    """Validate then record a scan in one call (used by tests and simple flows).
+    Production uses ``validate_scan`` + selfie save + ``record_scan`` so the
+    selfie is only written after all checks pass."""
+    session = validate_scan(db, session_id, qr_token, student, lat, lng, now)
+    return record_scan(db, session, student, lat, lng, selfie_path, now)

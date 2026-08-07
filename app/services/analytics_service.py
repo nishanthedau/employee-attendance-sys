@@ -83,7 +83,12 @@ def dashboard_stats(db: Session, today: date | None = None) -> dict:
     }
 
 
-def export_csv(db: Session, subject: str | None = None, day: date | None = None) -> str:
+def export_csv(
+    db: Session,
+    subject: str | None = None,
+    day: date | None = None,
+    faculty: str | None = None,
+) -> str:
     query = (
         select(
             AttendanceRecord.scan_time,
@@ -107,6 +112,8 @@ def export_csv(db: Session, subject: str | None = None, day: date | None = None)
         query = query.where(AttendanceSession.subject == subject)
     if day:
         query = query.where(AttendanceSession.date == day)
+    if faculty:
+        query = query.where(AttendanceSession.faculty == faculty)
 
     rows = db.execute(query).all()
 
@@ -151,6 +158,13 @@ def export_csv(db: Session, subject: str | None = None, day: date | None = None)
 def subject_options(db: Session) -> list[str]:
     rows = db.execute(
         select(AttendanceSession.subject).distinct().order_by(AttendanceSession.subject)
+    ).scalars().all()
+    return list(rows)
+
+
+def faculty_options(db: Session) -> list[str]:
+    rows = db.execute(
+        select(AttendanceSession.faculty).distinct().order_by(AttendanceSession.faculty)
     ).scalars().all()
     return list(rows)
 
