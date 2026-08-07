@@ -26,8 +26,8 @@ Open http://localhost:8000
 
 | Role  | Email            | Password   |
 |-------|------------------|------------|
-| Admin | admin@campus.edu | admin123   |
-| Student | aarav@campus.edu | student123 |
+| Admin | admin@company.com | admin123   |
+| Employee | aarav@company.com | student123 |
 
 ## Flow
 

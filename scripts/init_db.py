@@ -19,15 +19,15 @@ from app.models.entities import Role, User  # noqa: E402
 
 settings = get_settings()
 
-ADMIN_EMAIL = "admin@campus.edu"
+ADMIN_EMAIL = "admin@company.com"
 ADMIN_PASSWORD = "admin123"
 
 STUDENTS = [
-    ("Aarav Sharma", "aarav@campus.edu", "student123"),
-    ("Priya Patel", "priya@campus.edu", "student123"),
-    ("Rahul Verma", "rahul@campus.edu", "student123"),
-    ("Sneha Iyer", "sneha@campus.edu", "student123"),
-    ("Vikram Singh", "vikram@campus.edu", "student123"),
+    ("Aarav Sharma", "aarav@company.com", "student123"),
+    ("Priya Patel", "priya@company.com", "student123"),
+    ("Rahul Verma", "rahul@company.com", "student123"),
+    ("Sneha Iyer", "sneha@company.com", "student123"),
+    ("Vikram Singh", "vikram@company.com", "student123"),
 ]
 
 

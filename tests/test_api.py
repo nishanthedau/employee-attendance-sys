@@ -16,12 +16,12 @@ PNG = base64.b64decode(
 
 
 def admin_token(client, db_session):
-    create_user(db_session, "Admin", "admin@campus.edu", "secret123", Role.admin)
-    res = client.post("/api/auth/login", json={"email": "admin@campus.edu", "password": "secret123"})
+    create_user(db_session, "Admin", "admin@company.com", "secret123", Role.admin)
+    res = client.post("/api/auth/login", json={"email": "admin@company.com", "password": "secret123"})
     return {"Authorization": f"Bearer {res.json()['token']}"}
 
 
-def student_token(client, db_session, email="stu@campus.edu"):
+def student_token(client, db_session, email="stu@company.com"):
     create_user(db_session, "Student", email, "secret123", Role.student)
     res = client.post("/api/auth/login", json={"email": email, "password": "secret123"})
     return {"Authorization": f"Bearer {res.json()['token']}"}
@@ -161,7 +161,7 @@ def test_selfie_only_success(client, db_session, tmp_selfie_storage):
 
 
 def student_id_from(client, db_session):
-    return db_session.execute(select(User.id).where(User.email == "stu@campus.edu")).scalar_one()
+    return db_session.execute(select(User.id).where(User.email == "stu@company.com")).scalar_one()
 
 
 def test_selfie_only_duplicate_409(client, db_session, tmp_selfie_storage):
@@ -345,7 +345,7 @@ def test_student_management(client, db_session):
     headers = admin_token(client, db_session)
     created = client.post(
         "/api/admin/students",
-        json={"name": "New Kid", "email": "newkid@campus.edu", "password": "secret123"},
+        json={"name": "New Kid", "email": "newkid@company.com", "password": "secret123"},
         headers=headers,
     )
     assert created.status_code == 200
@@ -357,7 +357,7 @@ def test_student_management(client, db_session):
 
     dup = client.post(
         "/api/admin/students",
-        json={"name": "Dup", "email": "newkid@campus.edu", "password": "secret123"},
+        json={"name": "Dup", "email": "newkid@company.com", "password": "secret123"},
         headers=headers,
     )
     assert dup.status_code == 409

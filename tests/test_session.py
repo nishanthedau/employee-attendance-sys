@@ -15,8 +15,8 @@ LAT, LNG, RADIUS = 28.6139, 77.2090, 75
 
 
 def make_users(db):
-    admin = create_user(db, "Admin", "admin@campus.edu", "secret123", Role.admin)
-    student = create_user(db, "Student", "stu@campus.edu", "secret123", Role.student)
+    admin = create_user(db, "Admin", "admin@company.com", "secret123", Role.admin)
+    student = create_user(db, "Student", "stu@company.com", "secret123", Role.student)
     return admin, student
 
 
