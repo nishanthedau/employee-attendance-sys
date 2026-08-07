@@ -196,7 +196,7 @@ def add_student(
         user = create_user(db, payload.name, payload.email, payload.password, Role.student)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="A student with this email already exists.") from None
+        raise HTTPException(status_code=409, detail="An employee with this email already exists.") from None
     return {"id": user.id, "name": user.name, "email": user.email}
 
 

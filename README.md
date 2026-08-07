@@ -1,6 +1,6 @@
 # QR-Based Attendance Management System
 
-Secure web attendance: students mark attendance by scanning a QR code **and taking a
+Secure web attendance: employees mark attendance by scanning a QR code **and taking a
 selfie** from their browser. Identity comes from the authenticated session (never from
 the scan), the selfie photo is validated and stored, GPS is re-verified server-side,
 duplicates and QR replay are blocked, and admins get a dashboard + CSV export.
@@ -15,7 +15,7 @@ Built with **FastAPI + SQLAlchemy + MySQL** on the back and a **minimalist dark 
 uv sync
 cp .env.example .env   # edit DB creds if needed
 
-# 2. create DB + tables + seed (admin + 5 demo students)
+# 2. create DB + tables + seed (admin + 5 demo employees)
 uv run python scripts/init_db.py
 
 # 3. run
@@ -33,13 +33,13 @@ Open http://localhost:8000
 
 1. **Admin** logs in → **New Session** (subject, faculty, date, time window, coordinates,
    radius, QR expiry) → **Show QR**.
-2. **Student** logs in → **Scan QR Code** → camera scans the QR → camera flips to a **selfie**
+2. **Employee** logs in → **Scan QR Code** → camera scans the QR → camera flips to a **selfie**
    capture step (preview → confirm) → browser geolocation → the selfie + coordinates are
    uploaded as `multipart/form-data` → server validates the selfie (type/size/magic bytes),
    QR token, expiry, session window, duplicate, then Haversine distance vs. session radius →
    attendance stored with the photo path.
 3. **Admin** sees today's stats, sessions, history per session (with a **Selfie** button per
-   record), search, filters, CSV export. **Student** sees only the current week (Mon–Sun).
+   record), search, filters, CSV export. **Employee** sees only the current week (Mon–Sun).
 
 ## Structure
 
@@ -72,9 +72,9 @@ attendance-system/
 | `GET  /api/admin/attendance/history`  | admin   | per-session records (`session_id`) |
 | `GET  /api/admin/export`              | admin   | CSV, filters `subject`/`session_date` |
 | `GET  /api/admin/students`            | admin   | search `q`                         |
-| `POST /api/admin/students`            | admin   | add student (409 on duplicate)     |
-| `DELETE /api/admin/students/{id}`     | admin   | remove student + records           |
-| `GET  /api/admin/selfie/{record_id}`  | admin   | student selfie image (PNG/JPEG)    |
+| `POST /api/admin/students`            | admin   | add employee (409 on duplicate)     |
+| `DELETE /api/admin/students/{id}`     | admin   | remove employee + records           |
+| `GET  /api/admin/selfie/{record_id}`  | admin   | employee selfie image (PNG/JPEG)    |
 | `POST /api/student/attendance/scan`   | student | multipart: session_id, qr_token, latitude, longitude, selfie |
 | `GET  /api/student/attendance/current-week` | student | Mon–Sun this week only     |
 

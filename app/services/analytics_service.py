@@ -122,7 +122,7 @@ def export_csv(
     writer.writerow(
         [
             "scan_time",
-            "student",
+            "employee",
             "email",
             "subject",
             "faculty",

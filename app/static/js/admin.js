@@ -113,7 +113,7 @@ async function loadStudents() {
   const q = document.getElementById("student-search").value.trim();
   const students = await API.get(`/api/admin/students?q=${encodeURIComponent(q)}`);
   const el = document.getElementById("students-list");
-  document.getElementById("students-count").textContent = `${students.length} student${students.length === 1 ? "" : "s"}`;
+  document.getElementById("students-count").textContent = `${students.length} employee${students.length === 1 ? "" : "s"}`;
   el.innerHTML = students.length
     ? students
         .map(
@@ -126,7 +126,7 @@ async function loadStudents() {
             </div>`
         )
         .join("")
-    : "No students found";
+    : "No employees found";
 }
 
 async function addStudent(e) {
@@ -141,7 +141,7 @@ async function addStudent(e) {
       password: form.password.value,
     });
     form.reset();
-    showToast("Student added", "ok");
+    showToast("Employee added", "ok");
     await loadStudents();
   } catch (err) {
     showAlert(msgEl, "err", err.message);
@@ -149,11 +149,11 @@ async function addStudent(e) {
 }
 
 async function removeStudent(id, btn) {
-  if (!confirm("Remove this student? Their attendance records will be deleted.")) return;
+  if (!confirm("Remove this employee? Their attendance records will be deleted.")) return;
   btn.disabled = true;
   try {
     await API.request("DELETE", `/api/admin/students/${id}`);
-    showToast("Student removed", "ok");
+    showToast("Employee removed", "ok");
     await loadStudents();
   } catch (err) {
     showToast(err.message, "err");

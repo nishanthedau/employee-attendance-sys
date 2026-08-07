@@ -370,7 +370,7 @@ def test_export_csv(client, db_session):
     res = client.get("/api/admin/export", headers=headers)
     assert res.status_code == 200
     assert "text/csv" in res.headers["content-type"]
-    assert "scan_time,student,email" in res.text
+    assert "scan_time,employee,email" in res.text
 
 
 def test_current_week_shape(client, db_session):
