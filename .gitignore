@@ -9,6 +9,12 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Test / tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Runtime artifacts
 storage/logs/*.log
 storage/logs/*.out
 storage/exports/*.csv
