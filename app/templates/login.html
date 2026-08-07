@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign in · Attendance</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/css/app.css" />
+  <link rel="stylesheet" href="/static/css/app.css?v=2" />
 </head>
 <body>
   <div class="auth">
@@ -54,7 +54,7 @@
     </section>
   </div>
 
-  <script src="/static/js/api.js"></script>
+  <script src="/static/js/api.js?v=2"></script>
   <script>
     if (API.token() && API.user()) {
       window.location.href = API.user().role === "admin" ? "/admin" : "/student";

@@ -46,6 +46,9 @@ async def request_logging(request: Request, call_next):
             response.status_code,
             duration_ms,
         )
+    # Never cache pages or assets: stale JS on a phone after a deploy breaks
+    # the camera/selfie flow and shows errors that are hard to diagnose.
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 

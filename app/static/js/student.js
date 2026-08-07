@@ -67,10 +67,13 @@ function closeScan() {
 function overlaysOpen(id) { document.getElementById(id).classList.add("open"); }
 function overlaysClose(id) { document.getElementById(id).classList.remove("open"); }
 
-function stopScanner() {
+async function stopScanner() {
   if (scanner) {
-    scanner.stop().catch(() => {});
+    const s = scanner;
     scanner = null;
+    try {
+      await s.stop();
+    } catch {}
   }
 }
 
@@ -167,7 +170,15 @@ async function startScanner() {
     scanner = new Html5Qrcode("qr-reader");
     await scanner.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 220, height: 220 } },
+      {
+        fps: 10,
+        qrbox: { width: 220, height: 220 },
+        // Use the bundled JS decoder everywhere. The native BarcodeDetector
+        // path is only present on some Android phones and behaves
+        // differently (hard to verify remotely); the JS path is the one
+        // covered by the tests.
+        experimentalFeatures: { useBarCodeDetectorIfSupported: false },
+      },
       (text) => processPayload(text),
       () => {}
     );
@@ -195,7 +206,7 @@ async function processPayload(text) {
     return;
   }
   window[SELFIE_PAYLOAD] = payload;
-  stopScanner();
+  await stopScanner();
   await openSelfie();
 }
 
@@ -235,11 +246,21 @@ async function openSelfie() {
   showAlert(msgEl, "blank", "");
   showStep("selfie");
   const video = document.getElementById("selfie-video");
+  const requestCamera = (constraints) =>
+    navigator.mediaDevices.getUserMedia(constraints);
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
+    let stream;
+    try {
+      stream = await requestCamera({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+    } catch (e) {
+      // Some devices reject the constrained request (no matching camera or a
+      // stale permission state). Fall back to whatever camera the browser
+      // picks rather than giving up.
+      stream = await requestCamera({ video: true, audio: false });
+    }
     selfieStream = stream;
     video.srcObject = stream;
     await video.play();
