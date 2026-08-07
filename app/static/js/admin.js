@@ -305,6 +305,18 @@ function debounce(fn, ms) {
 }
 
 document.getElementById("create-btn").addEventListener("click", openDrawer);
+document.getElementById("refresh-btn").addEventListener("click", async (ev) => {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  try {
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents()]);
+    showToast("Refreshed", "ok");
+  } catch (err) {
+    showToast(err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
 document.getElementById("create-form").addEventListener("submit", handleCreate);
 document.getElementById("add-student-form").addEventListener("submit", addStudent);
 document.getElementById("filter-btn").addEventListener("click", loadSessions);
