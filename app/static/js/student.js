@@ -1,6 +1,37 @@
 const user = API.user();
 const SELFIE_PAYLOAD = "_scanPayload";
 const SELFIE_BLOB = "_selfieBlob";
+const VERIFY_CODE = "_verifyCode";
+
+let verifyMode = "none";
+
+function modeLabel(mode) {
+  return {
+    none: "no extra check",
+    selfie: "a selfie",
+    code: "your personal code",
+    both: "a selfie and your personal code",
+  }[mode] || "no extra check";
+}
+
+async function loadVerifyMode() {
+  try {
+    const data = await API.get("/api/student/settings");
+    verifyMode = data.verification_mode || "none";
+  } catch {
+    verifyMode = "none";
+  }
+  const needsSelfie = verifyMode === "selfie" || verifyMode === "both";
+  document.getElementById("mark-now-label").textContent = needsSelfie ? "Mark with Selfie" : "Mark Now";
+  document.getElementById("scan-hint").textContent =
+    `Camera opens — point it at your faculty's QR to mark attendance (${modeLabel(verifyMode)} confirmed).`;
+  document.getElementById("pick-hint").textContent =
+    `No QR handy? Pick the class that's open right now (${modeLabel(verifyMode)} confirmed).`;
+  document.getElementById("selfie-hint").textContent =
+    verifyMode === "both"
+      ? "Last step — take a quick selfie too. Location will be checked."
+      : "Last step — take a quick selfie to confirm it's you. Location will be checked too.";
+}
 
 async function guard() {
   if (!API.token() || !user) {
@@ -78,11 +109,54 @@ async function stopScanner() {
 }
 
 function showStep(step) {
-  const titles = { qr: "Scan QR", pick: "Mark with Selfie", selfie: "Confirm identity" };
+  const titles = {
+    qr: "Scan QR",
+    pick: "Mark now",
+    code: "Enter your code",
+    selfie: "Confirm identity",
+    confirm: "Confirm & mark",
+  };
   document.getElementById("scan-title").textContent = titles[step] || "Confirm";
   document.getElementById("qr-step").classList.toggle("hidden", step !== "qr");
   document.getElementById("pick-step").classList.toggle("hidden", step !== "pick");
+  document.getElementById("code-step").classList.toggle("hidden", step !== "code");
+  document.getElementById("confirm-step").classList.toggle("hidden", step !== "confirm");
   document.getElementById("selfie-step").classList.toggle("hidden", step !== "selfie");
+}
+
+function routeVerify() {
+  if (verifyMode === "code" || verifyMode === "both") {
+    document.getElementById("verify-code").value = "";
+    document.getElementById("code-msg").classList.add("hidden");
+    showStep("code");
+  } else if (verifyMode === "selfie") {
+    openSelfie();
+  } else {
+    showStep("confirm");
+  }
+}
+
+async function openCodeSubmit() {
+  const btn = document.getElementById("code-continue-btn");
+  const msgEl = document.getElementById("code-msg");
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  try {
+    const code = document.getElementById("verify-code").value.trim();
+    if (!/^\d{4,6}$/.test(code)) {
+      showAlert(msgEl, "err", "Your code is 4 to 6 digits. Check it and try again.");
+      return;
+    }
+    window[VERIFY_CODE] = code;
+    if (verifyMode === "both") {
+      openSelfie();
+    } else {
+      await submitMark("code");
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
 }
 
 async function loadLiveSessions() {
@@ -106,7 +180,7 @@ async function loadLiveSessions() {
         <span class="faint small">Mark</span>`;
       b.addEventListener("click", () => {
         window[SELFIE_PAYLOAD] = { session_id: s.id, qr_token: null };
-        openSelfie();
+        routeVerify();
       });
       list.appendChild(b);
     }
@@ -207,7 +281,7 @@ async function processPayload(text) {
   }
   window[SELFIE_PAYLOAD] = payload;
   await stopScanner();
-  await openSelfie();
+  routeVerify();
 }
 
 // ---------- Selfie capture ----------
@@ -226,6 +300,7 @@ function stopSelfieStream() {
 function resetSelfieUi() {
   delete window[SELFIE_PAYLOAD];
   delete window[SELFIE_BLOB];
+  delete window[VERIFY_CODE];
   const video = document.getElementById("selfie-video");
   video.classList.remove("hidden");
   document.getElementById("selfie-preview").classList.add("hidden");
@@ -311,9 +386,16 @@ function retakeSelfie() {
   video.play().catch(() => {});
 }
 
-async function submitWithSelfie() {
-  const btn = document.getElementById("confirm-btn");
-  const msgEl = document.getElementById("selfie-msg");
+async function submitMark(fromStep) {
+  const from = fromStep || "selfie";
+  const zones = {
+    selfie: { btnId: "confirm-btn", msgId: "selfie-msg" },
+    confirm: { btnId: "confirm-mark-btn", msgId: "confirm-msg" },
+    code: { btnId: "code-continue-btn", msgId: "code-msg" },
+  };
+  const zone = zones[from];
+  const btn = document.getElementById(zone.btnId);
+  const msgEl = document.getElementById(zone.msgId);
   const original = btn.innerHTML;
   btn.disabled = true;
   const busy = (label) => (btn.innerHTML = `<span class="small">${label}…</span>`);
@@ -328,7 +410,10 @@ async function submitWithSelfie() {
     if (viaQr) fd.append("qr_token", payload.qr_token);
     fd.append("latitude", String(loc.lat));
     fd.append("longitude", String(loc.lng));
-    fd.append("selfie", window[SELFIE_BLOB], "selfie.jpg");
+    const code = window[VERIFY_CODE];
+    if (code) fd.append("code", code);
+    const blob = window[SELFIE_BLOB];
+    if (blob) fd.append("selfie", blob, "selfie.jpg");
     const result = await API.postForm(viaQr ? "/api/student/attendance/scan" : "/api/student/attendance/selfie", fd);
     closeScan();
     showToast(result.message, "ok");
@@ -341,11 +426,21 @@ async function submitWithSelfie() {
   }
 }
 
+async function submitWithSelfie() {
+  await submitMark("selfie");
+}
+
 document.getElementById("scan-btn").addEventListener("click", openScan);
 document.getElementById("selfie-only-btn").addEventListener("click", openSelfieOnly);
+document.getElementById("code-continue-btn").addEventListener("click", openCodeSubmit);
+document.getElementById("confirm-mark-btn").addEventListener("click", () => submitMark("confirm"));
+document.getElementById("verify-code").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") openCodeSubmit();
+});
 
 (async () => {
   await guard();
+  await loadVerifyMode();
   try {
     await loadWeek();
   } catch (err) {

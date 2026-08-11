@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.rate_limit import RateLimiter
 from app.db.database import get_db
-from app.models.entities import Role, User
-from app.services.auth_service import get_user_by_token, require_role
+from app.models.entities import DeviceRegistration, Role, User
+from app.services.auth_service import get_device_by_token, get_user_by_token, require_role
 
 LOGIN_LIMIT = RateLimiter(max_requests=10, window_seconds=60)
 SCAN_LIMIT = RateLimiter(max_requests=30, window_seconds=60)
@@ -44,3 +44,13 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 def require_student(user: User = Depends(get_current_user)) -> User:
     require_role(user, Role.student)
     return user
+
+
+def get_request_device(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> DeviceRegistration | None:
+    """Resolve the bound device behind the token, if any (session tokens have none)."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return None
+    return get_device_by_token(db, authorization.split(" ", 1)[1].strip())

@@ -120,9 +120,12 @@ async function loadStudents() {
           (s) =>
             `<div class="flex between" style="padding: 6px 0;">
               <span><span style="font-weight:600;">${esc(s.name)}</span> <span class="faint small">${esc(s.email)}</span></span>
-              <button class="icon-btn sm" title="Remove ${esc(s.name)}" onclick="removeStudent(${s.id}, this)">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
+              <span class="flex">
+                <button class="btn ghost sm" onclick="showCode(${s.id}, '${esc(s.name)}')">Code</button>
+                <button class="icon-btn sm" title="Remove ${esc(s.name)}" onclick="removeStudent(${s.id}, this)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </span>
             </div>`
         )
         .join("")
@@ -157,6 +160,87 @@ async function removeStudent(id, btn) {
     await loadStudents();
   } catch (err) {
     showToast(err.message, "err");
+    btn.disabled = false;
+  }
+}
+
+async function loadSettings() {
+  try {
+    const s = await API.get("/api/admin/settings");
+    document.getElementById("settings-mode").value = s.verification_mode;
+    document.getElementById("settings-radius").value = s.default_radius_meters;
+  } catch {}
+}
+
+async function saveSettings() {
+  const btn = document.getElementById("save-settings-btn");
+  const msgEl = document.getElementById("settings-msg");
+  msgEl.classList.add("hidden");
+  btn.disabled = true;
+  try {
+    await API.put("/api/admin/settings", {
+      verification_mode: document.getElementById("settings-mode").value,
+      default_radius_meters: parseInt(document.getElementById("settings-radius").value, 10),
+    });
+    showToast("Settings saved", "ok");
+  } catch (err) {
+    showAlert(msgEl, "err", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Verification codes ----------
+let codeStudent = null;
+
+async function showCode(id, name) {
+  document.getElementById("code-view-name").textContent = name;
+  document.getElementById("code-msg").classList.add("hidden");
+  document.getElementById("code-input").value = "";
+  overlays.open("code-overlay");
+  try {
+    const data = await API.get(`/api/admin/students/${id}/code`);
+    codeStudent = { id, name };
+    document.getElementById("code-current").textContent =
+      data.code ? `Current code: ${data.code}` : "No code assigned yet.";
+  } catch (err) {
+    showAlert(document.getElementById("code-msg"), "err", err.message);
+  }
+}
+
+async function saveCode() {
+  const btn = document.getElementById("code-save-btn");
+  const msgEl = document.getElementById("code-msg");
+  msgEl.classList.add("hidden");
+  if (!codeStudent) return;
+  btn.disabled = true;
+  try {
+    const code = document.getElementById("code-input").value.trim();
+    const data = await API.put(`/api/admin/students/${codeStudent.id}/code`, { code });
+    document.getElementById("code-input").value = "";
+    document.getElementById("code-current").textContent = `Current code: ${data.code}`;
+    showToast(`Code for ${codeStudent.name} updated`, "ok");
+  } catch (err) {
+    showAlert(msgEl, "err", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function regenerateCode() {
+  if (!codeStudent) return;
+  const msgEl = document.getElementById("code-msg");
+  msgEl.classList.add("hidden");
+  const btn = document.getElementById("code-regenerate-btn");
+  btn.disabled = true;
+  try {
+    const data = await API.put(`/api/admin/students/${codeStudent.id}/code`, {});
+    document.getElementById("code-input").value = "";
+    document.getElementById("code-current").textContent = `Current code: ${data.code}`;
+    showToast(`New code for ${codeStudent.name}: ${data.code}`, "ok");
+  } catch (err) {
+    showAlert(msgEl, "err", err.message);
+  } finally {
     btn.disabled = false;
   }
 }
@@ -305,11 +389,12 @@ function debounce(fn, ms) {
 }
 
 document.getElementById("create-btn").addEventListener("click", openDrawer);
+document.getElementById("save-settings-btn").addEventListener("click", saveSettings);
 document.getElementById("refresh-btn").addEventListener("click", async (ev) => {
   const btn = ev.currentTarget;
   btn.disabled = true;
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings()]);
     showToast("Refreshed", "ok");
   } catch (err) {
     showToast(err.message, "err");
@@ -352,7 +437,7 @@ document.getElementById("student-search").addEventListener("input", debounce(loa
 (async () => {
   await guard();
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings()]);
   } catch (err) {
     showToast(err.message, "err");
   }

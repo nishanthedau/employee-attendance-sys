@@ -238,15 +238,15 @@ def test_live_sessions_endpoint(client, db_session):
     assert expired["id"] not in ids
 
 
-def test_scan_missing_selfie_rejected(client, db_session):
+def test_scan_without_selfie_succeeds_when_not_required(client, db_session, tmp_selfie_storage):
     admin_h = admin_token(client, db_session)
     session = create_session(client, admin_h).json()
     token = session_qr_token(db_session, session["id"])
 
     stu_h = student_token(client, db_session)
     res = scan(client, stu_h, session["id"], token, selfie=None)
-    assert res.status_code == 422
-    assert isinstance(res.json()["detail"], str)
+    assert res.status_code == 200
+    assert res.json()["record"]["selfie"] is False
 
 
 def test_scan_invalid_selfie_type(client, db_session):
@@ -284,7 +284,7 @@ def test_scan_fake_image_content_type(client, db_session):
     assert res.json()["code"] == "invalid_selfie"
 
 
-def test_scan_missing_gps_rejected(client, db_session):
+def test_scan_without_gps_succeeds_when_absent(client, db_session, tmp_selfie_storage):
     admin_h = admin_token(client, db_session)
     session = create_session(client, admin_h).json()
     token = session_qr_token(db_session, session["id"])
@@ -293,9 +293,8 @@ def test_scan_missing_gps_rejected(client, db_session):
     data = {"session_id": str(session["id"]), "qr_token": token}
     files = {"selfie": ("selfie.png", PNG, "image/png")}
     res = client.post("/api/student/attendance/scan", data=data, files=files, headers=stu_h)
-    assert res.status_code == 422
-    assert isinstance(res.json()["detail"], str)
-    assert res.json()["code"] == "invalid_input"
+    assert res.status_code == 200
+    assert res.json()["record"]["status"] == "present"
 
 
 def test_scan_invalid_token(client, db_session):

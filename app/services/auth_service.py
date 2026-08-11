@@ -101,6 +101,18 @@ def get_user_by_token(db: Session, token: str) -> User | None:
     return None
 
 
+def get_device_by_token(db: Session, token: str) -> DeviceRegistration | None:
+    return (
+        db.execute(
+            select(DeviceRegistration).where(
+                DeviceRegistration.token_hash == hash_token(token),
+                DeviceRegistration.is_active.is_(True),
+            )
+        )
+        .scalar_one_or_none()
+    )
+
+
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 

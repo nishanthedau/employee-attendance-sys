@@ -34,6 +34,17 @@ class DeviceTokenResponse(BaseModel):
     device_id: int
 
 
+class AssignCodeRequest(BaseModel):
+    code: str | None = Field(default=None, min_length=4, max_length=6)
+
+
+class SettingsUpdateRequest(BaseModel):
+    verification_mode: str | None = Field(default=None, pattern="^(none|selfie|code|both)$")
+    default_radius_meters: int | None = Field(default=None, gt=0, le=5000)
+    selfie_retention_days: int | None = Field(default=None, gt=0, le=3650)
+    sheets_enabled: bool | None = None
+
+
 class SessionCreateRequest(BaseModel):
     subject: str = Field(min_length=1, max_length=120)
     faculty: str = Field(min_length=1, max_length=120)

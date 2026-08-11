@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = True
     secret_key: str = "change-me-in-production"
+    verification_code_key: str = ""
 
     db_host: str = "127.0.0.1"
     db_port: int = 3306

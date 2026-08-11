@@ -3,14 +3,23 @@
 import secrets
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from hmac import compare_digest
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.time import now
-from app.models.entities import AttendanceRecord, AttendanceSession, User
+from app.models.entities import (
+    AttendanceAttempt,
+    AttendanceRecord,
+    AttendanceSession,
+    User,
+    VerificationMode,
+)
+from app.services.code_service import decrypt_code
 from app.services.geo_service import is_within_radius
+from app.services.settings_service import get_org_settings
 
 
 class SessionError(Exception):
@@ -144,7 +153,13 @@ def validate_live_session(
             "You've already marked attendance for this session.", status_code=409, code="already_marked"
         )
 
-    if not is_within_radius(lat, lng, session.latitude, session.longitude, session.radius_meters):
+    # GPS is soft: missing location is silently skipped (no error, per v2 rule);
+    # present-but-outside the radius is a hard block.
+    if (
+        lat is not None
+        and lng is not None
+        and not is_within_radius(lat, lng, session.latitude, session.longitude, session.radius_meters)
+    ):
         raise SessionError(
             "You're outside the attendance area. Move closer to the class and try again.",
             code="outside_zone",
@@ -173,6 +188,11 @@ def record_scan(
     lng: float,
     selfie_path: str | None = None,
     now: datetime | None = None,
+    *,
+    method: str | None = None,
+    verification_method_used: str | None = None,
+    code_verified: bool | None = None,
+    device_id: int | None = None,
 ) -> AttendanceRecord:
     """Persist an already-validated scan. The unique (student, session)
     constraint is the race-condition backstop for concurrent duplicate scans."""
@@ -180,11 +200,15 @@ def record_scan(
     record = AttendanceRecord(
         student_id=student.id,
         session_id=session.id,
+        device_id=device_id,
         scan_time=now,
         latitude=lat,
         longitude=lng,
         selfie_path=selfie_path,
         status="present",
+        method=method,
+        verification_method_used=verification_method_used,
+        code_verified=code_verified,
     )
     db.add(record)
     try:
@@ -197,6 +221,93 @@ def record_scan(
         ) from None
     db.refresh(record)
     return record
+
+
+def org_verification_mode(db: Session) -> VerificationMode:
+    return get_org_settings(db).verification_mode
+
+
+def verify_stored_code(db: Session, student: User, provided_code: str) -> bool:
+    """Check a submitted verification code against the employee's assigned code."""
+    if not student.verification_code:
+        raise SessionError(
+            "No code has been assigned to you yet. Ask the admin for your code.",
+            code="no_code_assigned",
+        )
+    try:
+        stored = decrypt_code(student.verification_code)
+    except ValueError:
+        raise SessionError(
+            "Your code couldn't be verified. Ask the admin to reassign it.", code="wrong_code"
+        ) from None
+    if not provided_code or not compare_digest(stored, provided_code):
+        raise SessionError("That code isn't right. Please check and try again.", code="wrong_code")
+    return True
+
+
+def check_verification(
+    db: Session,
+    student: User,
+    *,
+    has_selfie: bool,
+    provided_code: str | None,
+) -> tuple[str, bool | None]:
+    """Enforce the org's verification mode.
+
+    Returns (verification_method_used, code_verified) where code_verified is
+    None when no code was required. Missing required selfie/code raises a
+    SessionError; wrong codes raise a SessionError too.
+    """
+    mode = org_verification_mode(db)
+    if mode in (VerificationMode.selfie, VerificationMode.both) and not has_selfie:
+        raise SessionError(
+            "This class asks for a quick selfie too. Tap to add one and try again.",
+            code="selfie_required",
+        )
+    code_verified = None
+    if mode in (VerificationMode.code, VerificationMode.both):
+        if not provided_code:
+            raise SessionError(
+                "This class needs your personal code. Enter it and try again.",
+                code="code_required",
+            )
+        verify_stored_code(db, student, provided_code)
+        code_verified = True
+    return mode.value, code_verified
+
+
+def record_attempt(
+    db: Session,
+    *,
+    student_id: int,
+    outcome: str,
+    session_id: int | None = None,
+    device_id: int | None = None,
+    fail_reason: str | None = None,
+    method: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
+    ip: str | None = None,
+    server_timestamps: dict | None = None,
+) -> AttendanceAttempt:
+    """Persist one attempt (success or failure) for the audit trail."""
+    attempt = AttendanceAttempt(
+        student_id=student_id,
+        session_id=session_id,
+        device_id=device_id,
+        attempted_at=now(),
+        outcome=outcome,
+        fail_reason=fail_reason,
+        method=method,
+        latitude=lat,
+        longitude=lng,
+        ip=ip,
+        server_timestamps=server_timestamps,
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return attempt
 
 
 def scan_attendance(

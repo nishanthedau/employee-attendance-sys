@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Admin · Attendance</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/css/app.css?v=4" />
+  <link rel="stylesheet" href="/static/css/app.css?v=5" />
 </head>
 <body>
   <nav class="topbar">
@@ -41,6 +41,32 @@
     </div>
 
     <div class="metrics" id="metrics"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Check-in Settings</h3>
+        <button class="btn ghost sm" id="save-settings-btn">Save</button>
+      </div>
+      <div class="card-body">
+        <div id="settings-msg" class="alert err hidden"></div>
+        <div class="form-row" style="max-width: 560px;">
+          <div class="form-group">
+            <label class="form-label">Employee verification</label>
+            <select class="select" id="settings-mode" style="width: 100%;">
+              <option value="none">None — QR / location only</option>
+              <option value="selfie">Selfie</option>
+              <option value="code">Personal code</option>
+              <option value="both">Selfie + personal code</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Default radius (m)</label>
+            <input class="input" id="settings-radius" type="number" min="1" style="width: 100%;" />
+          </div>
+        </div>
+        <p class="faint small mt-8">Codes are assigned per employee below. Employees outside the radius are blocked; missing GPS is skipped.</p>
+      </div>
+    </div>
 
     <div class="card">
       <div class="card-head">
@@ -208,7 +234,27 @@
     </div>
   </div>
 
-  <script src="/static/js/api.js?v=4"></script>
-  <script src="/static/js/admin.js?v=4"></script>
+  <!-- Verification code overlay -->
+  <div class="overlay" id="code-overlay">
+    <div class="overlay-panel" style="width: min(420px, 100%);">
+      <div class="overlay-head">
+        <h3 id="code-view-name">Verification code</h3>
+        <button class="close" onclick="closeOverlay('code-overlay')">&times;</button>
+      </div>
+      <p class="small muted" style="margin-bottom: 12px;">The employee enters this code when marking attendance (if the org setting asks for one).</p>
+      <p class="faint small" id="code-current" style="margin-bottom: 12px;">No code assigned yet.</p>
+      <div id="code-msg" class="alert err hidden"></div>
+      <input class="input" id="code-input" type="text" inputmode="numeric" pattern="[0-9]*"
+        placeholder="4–6 digit code (blank = auto-generate)" maxlength="6"
+        style="font-size: 18px; letter-spacing: 4px; margin-top: 10px;" />
+      <div class="flex mt-16">
+        <button class="btn ghost grow" id="code-regenerate-btn" onclick="regenerateCode()">Regenerate</button>
+        <button class="btn grow" id="code-save-btn" onclick="saveCode()">Save Code</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/api.js?v=5"></script>
+  <script src="/static/js/admin.js?v=5"></script>
 </body>
 </html>

@@ -1,21 +1,37 @@
+import re
+import secrets
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import require_admin
-from app.api.schemas import SessionCreateRequest, StudentCreateRequest
+from app.api.schemas import (
+    AssignCodeRequest,
+    SessionCreateRequest,
+    SettingsUpdateRequest,
+    StudentCreateRequest,
+)
 from app.core.storage import selfie_path
 from app.core.time import local_iso, now
 from app.db.database import get_db
-from app.models.entities import AttendanceRecord, AttendanceSession, Role, User
+from app.models.entities import (
+    AttendanceRecord,
+    AttendanceSession,
+    DeviceRegistration,
+    Role,
+    User,
+)
 from app.services.analytics_service import dashboard_stats, export_csv, faculty_options, subject_options
+from app.services.audit_service import log_action
 from app.services.auth_service import create_user
+from app.services.code_service import decrypt_code, encrypt_code
 from app.services.qr_service import render_session_qr
 from app.services.session_service import CreateSessionData, markable_state, validate_and_create
+from app.services.settings_service import get_org_settings, update_org_settings
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -227,3 +243,176 @@ def export(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="attendance_export.csv"'},
     )
+
+
+@router.get("/settings")
+def org_settings(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    settings = get_org_settings(db)
+    return {
+        "verification_mode": settings.verification_mode.value,
+        "default_radius_meters": settings.default_radius_meters,
+        "selfie_retention_days": settings.selfie_retention_days,
+        "sheets_enabled": settings.sheets_enabled,
+    }
+
+
+@router.put("/settings")
+def update_settings(
+    payload: SettingsUpdateRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    before = get_org_settings(db)
+    fields = payload.model_dump(exclude_unset=True)
+    try:
+        updated = update_org_settings(db, **fields)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    log_action(
+        db,
+        admin,
+        "settings_updated",
+        entity_type="org_settings",
+        entity_id=updated.id,
+        details={
+            "changed": fields,
+            "before": {
+                "verification_mode": before.verification_mode.value,
+                "default_radius_meters": before.default_radius_meters,
+                "selfie_retention_days": before.selfie_retention_days,
+                "sheets_enabled": before.sheets_enabled,
+            },
+        },
+        ip=request.client.host if request.client else None,
+    )
+    return {
+        "verification_mode": updated.verification_mode.value,
+        "default_radius_meters": updated.default_radius_meters,
+        "selfie_retention_days": updated.selfie_retention_days,
+        "sheets_enabled": updated.sheets_enabled,
+    }
+
+
+def _normalize_code(raw: str | None) -> str:
+    if raw is None:
+        return f"{secrets.randbelow(10**5):05d}"
+    code = re.sub(r"\D", "", raw)
+    if len(code) < 4 or len(code) > 6:
+        raise HTTPException(status_code=422, detail="Code must be 4 to 6 digits.")
+    return code
+
+
+@router.put("/students/{student_id}/code")
+def assign_code(
+    student_id: int,
+    payload: AssignCodeRequest,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, student_id)
+    if not user or user.role != Role.student:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+    code = _normalize_code(payload.code)
+    user.verification_code = encrypt_code(code)
+    user.verification_code_assigned_at = now()
+    db.commit()
+    log_action(
+        db,
+        admin,
+        "code_assigned",
+        entity_type="user",
+        entity_id=user.id,
+        details={"reassigned": user.verification_code_assigned_at is not None},
+        ip=request.client.host if request.client else None,
+    )
+    return {"id": user.id, "code": code}
+
+
+@router.get("/students/{student_id}/code")
+def view_code(
+    student_id: int,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(User, student_id)
+    if not user or user.role != Role.student:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+    if not user.verification_code:
+        return {"id": user.id, "code": None}
+    try:
+        code = decrypt_code(user.verification_code)
+    except ValueError:
+        raise HTTPException(status_code=500, detail="Stored code cannot be decrypted.") from None
+    log_action(
+        db,
+        admin,
+        "code_viewed",
+        entity_type="user",
+        entity_id=user.id,
+        ip=request.client.host if request.client else None,
+    )
+    return {"id": user.id, "code": code}
+
+
+@router.get("/devices")
+def list_devices(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.execute(
+            select(User, DeviceRegistration)
+            .join(DeviceRegistration.user)
+            .where(User.role == Role.student)
+            .order_by(DeviceRegistration.last_seen_at.desc())
+            .limit(200)
+        )
+        .all()
+    )
+    return [
+        {
+            "id": d.id,
+            "employee_id": u.id,
+            "employee_name": u.name,
+            "device_name": d.device_name,
+            "os": d.os,
+            "os_version": d.os_version,
+            "browser": d.browser,
+            "browser_version": d.browser_version,
+            "model": d.model,
+            "screen": d.screen,
+            "language": d.language,
+            "ip": d.ip,
+            "last_seen_at": local_iso(d.last_seen_at) if d.last_seen_at else None,
+            "is_active": d.is_active,
+            "created_at": local_iso(d.created_at),
+        }
+        for u, d in rows
+    ]
+
+
+@router.delete("/devices/{device_id}")
+def revoke_device(
+    device_id: int,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    device = db.get(DeviceRegistration, device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found.")
+    device.is_active = False
+    db.commit()
+    log_action(
+        db,
+        admin,
+        "device_revoked",
+        entity_type="device",
+        entity_id=device.id,
+        details={"employee_id": device.user_id, "device_name": device.device_name},
+        ip=request.client.host if request.client else None,
+    )
+    return {"ok": True}
