@@ -27,6 +27,15 @@ from app.services.session_service import (
 router = APIRouter(prefix="/api/student", tags=["student"])
 
 
+def _request_enrichment(request: Request, device) -> dict:
+    """Pull the pieces record_scan uses to enrich the audit columns."""
+    return {
+        "client_ip": request.client.host if request.client else None,
+        "user_agent": request.headers.get("user-agent"),
+        "device": device,
+    }
+
+
 @router.get("/settings")
 def student_settings(
     student: User = Depends(get_current_user),
@@ -114,6 +123,7 @@ def mark_by_selfie(
             verification_method_used=verification_method_used,
             code_verified=code_verified,
             device_id=device.id if device else None,
+            **_request_enrichment(request, device),
         )
     except Exception:
         if filename:
@@ -201,6 +211,7 @@ def scan(
             verification_method_used=verification_method_used,
             code_verified=code_verified,
             device_id=device.id if device else None,
+            **_request_enrichment(request, device),
         )
     except Exception:
         if filename:

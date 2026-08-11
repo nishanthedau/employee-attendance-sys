@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     db_password: str = ""
 
     selfie_storage_dir: str = ""
+    geoip_city_db: str = ""
+    geoip_asn_db: str = ""
 
     @property
     def database_url(self) -> str:

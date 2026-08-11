@@ -14,12 +14,15 @@ from app.models.entities import (
     AttendanceAttempt,
     AttendanceRecord,
     AttendanceSession,
+    DeviceRegistration,
     User,
     VerificationMode,
 )
 from app.services.code_service import decrypt_code
 from app.services.geo_service import is_within_radius
+from app.services.geoip_service import enrich as geoip_enrich
 from app.services.settings_service import get_org_settings
+from app.services.ua_service import parse_ua
 
 
 class SessionError(Exception):
@@ -193,10 +196,20 @@ def record_scan(
     verification_method_used: str | None = None,
     code_verified: bool | None = None,
     device_id: int | None = None,
+    client_ip: str | None = None,
+    user_agent: str | None = None,
+    device: DeviceRegistration | None = None,
 ) -> AttendanceRecord:
     """Persist an already-validated scan. The unique (student, session)
-    constraint is the race-condition backstop for concurrent duplicate scans."""
+    constraint is the race-condition backstop for concurrent duplicate scans.
+
+    The record is enriched with the client IP's GeoLite2 location (ISP, city,
+    region, country) and a server-side parse of the User-Agent (OS, browser,
+    device model). Screen size is copied from the bound device when present.
+    """
     now = now or datetime.now()
+    geo = geoip_enrich(client_ip)
+    ua = parse_ua(user_agent)
     record = AttendanceRecord(
         student_id=student.id,
         session_id=session.id,
@@ -209,6 +222,17 @@ def record_scan(
         method=method,
         verification_method_used=verification_method_used,
         code_verified=code_verified,
+        ip=client_ip,
+        isp=geo.get("isp"),
+        city=geo.get("city"),
+        region=geo.get("region"),
+        country=geo.get("country"),
+        os=ua["os"] or (device.os if device else None),
+        browser=ua["browser"] or (device.browser if device else None),
+        browser_version=ua["browser_version"] or (device.browser_version if device else None),
+        device_model=ua["device_model"] or (device.model if device else None),
+        network_type=None,
+        screen=device.screen if device else None,
     )
     db.add(record)
     try:
