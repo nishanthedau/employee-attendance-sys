@@ -172,6 +172,8 @@ a:hover { text-decoration: underline; }
 .pill.ok { background: var(--success-soft); color: var(--success); }
 .pill.err { background: var(--danger-soft); color: var(--danger); }
 .pill.info { background: var(--accent-soft); color: var(--accent); }
+.pill.warn { background: var(--warning-soft, rgba(245, 158, 11, 0.15)); color: var(--warning, #f59e0b); }
+.pill.bad { background: var(--danger-soft); color: var(--danger); }
 .pill.off { background: rgba(255,255,255,0.05); color: var(--text-faint); }
 .pill-live { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; background: var(--success-soft); color: var(--success); font-size: 12px; font-weight: 700; }
 .pill-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 1.6s infinite; }

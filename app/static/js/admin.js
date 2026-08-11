@@ -335,6 +335,104 @@ function viewSelfie(recordId, name) {
   }).catch((e) => showToast(e.message, "err"));
 }
 
+// ---------- Audit ----------
+function scorePill(score) {
+  if (score <= 0) return `<span class="pill ok">0</span>`;
+  if (score < 40) return `<span class="pill warn">${score}</span>`;
+  return `<span class="pill bad">${score}</span>`;
+}
+
+function flagList(flags) {
+  return flags && Object.keys(flags).length
+    ? Object.entries(flags).map(([k, v]) => `${k}: ${esc(v)}`).join("<br>")
+    : "—";
+}
+
+async function loadAudit() {
+  const params = new URLSearchParams();
+  if (document.getElementById("audit-flagged").checked) params.set("min_anomaly", "1");
+  if (document.getElementById("audit-unreviewed").checked) params.set("unreviewed_only", "true");
+  const rows = await API.get(`/api/admin/audit/records?${params.toString()}`);
+  const body = document.getElementById("audit-body");
+  body.innerHTML = rows.length ? "" : `<tr><td colspan="8" class="center muted">No records</td></tr>`;
+  for (const r of rows) {
+    const loc = [r.city, r.region, r.country].filter(Boolean).join(", ") || "—";
+    const verify = r.verification_method_used || "—";
+    const device = [r.os, r.browser, r.device_model].filter(Boolean).join(" · ") || "—";
+    const status = r.reviewed
+      ? `<span class="pill info">reviewed</span>`
+      : `<button class="btn ghost sm" onclick="reviewRecord(${r.id})">Review</button>`;
+    body.insertAdjacentHTML(
+      "beforeend",
+      `<tr>
+        <td class="num muted small">${esc(r.scan_time)}</td>
+        <td style="font-weight:600;">${esc(r.employee.name)}</td>
+        <td class="muted small">${esc(r.session.subject)} · ${fmtDate(r.session.date)}</td>
+        <td class="small">${esc(verify)}${r.code_verified ? " ✓" : ""}</td>
+        <td class="small">${esc(device)}</td>
+        <td class="small muted" title="${esc(r.ip || "")}${r.isp ? " · " + esc(r.isp) : ""}">${esc(loc)}</td>
+        <td>${scorePill(r.anomaly_score)}</td>
+        <td class="small">${status}
+          <div class="faint" style="font-size:11px;">${flagList(r.anomaly_flags)}</div>
+        </td>
+      </tr>`
+    );
+  }
+}
+
+async function loadAttempts() {
+  const rows = await API.get("/api/admin/audit/attempts?limit=50");
+  const body = document.getElementById("attempts-body");
+  body.innerHTML = rows.length ? "" : `<tr><td colspan="6" class="center muted">No attempts yet</td></tr>`;
+  for (const a of rows) {
+    const outcome =
+      a.outcome === "success"
+        ? `<span class="pill ok">ok</span>`
+        : `<span class="pill bad">${esc(a.outcome)}</span>`;
+    const reason = a.fail_reason ? `<span class="muted small">${esc(a.fail_reason)}</span>` : "—";
+    body.insertAdjacentHTML(
+      "beforeend",
+      `<tr>
+        <td class="num muted small">${esc(a.attempted_at)}</td>
+        <td>${esc(a.employee.name)}</td>
+        <td>${outcome}</td>
+        <td>${reason}</td>
+        <td class="muted small">${esc(a.method || "—")}</td>
+        <td class="muted small">${esc(a.ip || "—")}</td>
+      </tr>`
+    );
+  }
+}
+
+async function loadActivity() {
+  const rows = await API.get("/api/admin/audit/log?limit=50");
+  const body = document.getElementById("activity-body");
+  body.innerHTML = rows.length ? "" : `<tr><td colspan="5" class="center muted">No activity yet</td></tr>`;
+  for (const e of rows) {
+    const detail = e.details ? JSON.stringify(e.details) : "";
+    body.insertAdjacentHTML(
+      "beforeend",
+      `<tr>
+        <td class="num muted small">${esc(e.created_at)}</td>
+        <td>${esc(e.actor || "—")}</td>
+        <td class="small">${esc(e.action)}</td>
+        <td class="muted small">${esc(detail)}</td>
+        <td class="muted small">${esc(e.ip || "—")}</td>
+      </tr>`
+    );
+  }
+}
+
+async function reviewRecord(id) {
+  try {
+    await API.post(`/api/admin/audit/records/${id}/review`);
+    showToast("Marked as reviewed", "ok");
+    await loadAudit();
+  } catch (err) {
+    showToast(err.message, "err");
+  }
+}
+
 // ---------- Create ----------
 async function handleCreate(e) {
   e.preventDefault();
@@ -394,7 +492,7 @@ document.getElementById("refresh-btn").addEventListener("click", async (ev) => {
   const btn = ev.currentTarget;
   btn.disabled = true;
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity()]);
     showToast("Refreshed", "ok");
   } catch (err) {
     showToast(err.message, "err");
@@ -405,6 +503,12 @@ document.getElementById("refresh-btn").addEventListener("click", async (ev) => {
 document.getElementById("create-form").addEventListener("submit", handleCreate);
 document.getElementById("add-student-form").addEventListener("submit", addStudent);
 document.getElementById("filter-btn").addEventListener("click", loadSessions);
+document.getElementById("audit-refresh-btn").addEventListener("click", () =>
+  Promise.all([loadAudit(), loadAttempts(), loadActivity()])
+);
+["audit-flagged", "audit-unreviewed"].forEach((id) =>
+  document.getElementById(id).addEventListener("change", loadAudit)
+);
 document.getElementById("export-btn").addEventListener("click", async (ev) => {
   const btn = ev.currentTarget;
   btn.disabled = true;
@@ -437,7 +541,7 @@ document.getElementById("student-search").addEventListener("input", debounce(loa
 (async () => {
   await guard();
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity()]);
   } catch (err) {
     showToast(err.message, "err");
   }

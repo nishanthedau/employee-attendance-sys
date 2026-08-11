@@ -19,8 +19,10 @@ from app.core.storage import selfie_path
 from app.core.time import local_iso, now
 from app.db.database import get_db
 from app.models.entities import (
+    AttendanceAttempt,
     AttendanceRecord,
     AttendanceSession,
+    AuditLog,
     DeviceRegistration,
     Role,
     User,
@@ -58,6 +60,7 @@ def _session_dict(s: AttendanceSession) -> dict:
 @router.post("/attendance/create")
 def create_session(
     payload: SessionCreateRequest,
+    request: Request,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -75,6 +78,20 @@ def create_session(
             qr_expiry_minutes=payload.qr_expiry_minutes,
         ),
         admin,
+    )
+    log_action(
+        db,
+        admin,
+        "session_created",
+        entity_type="attendance_session",
+        entity_id=session.id,
+        details={
+            "subject": session.subject,
+            "date": session.date.isoformat(),
+            "start_time": session.start_time.strftime("%H:%M"),
+            "end_time": session.end_time.strftime("%H:%M"),
+        },
+        ip=request.client.host if request.client else None,
     )
     return _session_dict(session)
 
@@ -416,3 +433,155 @@ def revoke_device(
         ip=request.client.host if request.client else None,
     )
     return {"ok": True}
+
+
+# ---------- Audit cockpit ----------
+
+
+@router.get("/audit/records")
+def audit_records(
+    session_id: int | None = Query(default=None),
+    min_anomaly: int = Query(default=0, ge=0, le=100),
+    unreviewed_only: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=500),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Audit view of marked records with enrichment, device and anomaly detail."""
+    query = (
+        select(AttendanceRecord, User, AttendanceSession)
+        .join(User, AttendanceRecord.student_id == User.id)
+        .join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id)
+    )
+    if session_id is not None:
+        query = query.where(AttendanceRecord.session_id == session_id)
+    if min_anomaly:
+        query = query.where(AttendanceRecord.anomaly_score >= min_anomaly)
+    if unreviewed_only:
+        query = query.where(AttendanceRecord.reviewed.is_(False))
+    rows = db.execute(query.order_by(AttendanceRecord.scan_time.desc()).limit(limit)).all()
+    return [
+        {
+            "id": r.id,
+            "employee": {"id": u.id, "name": u.name, "email": u.email},
+            "session": {
+                "id": s.id,
+                "subject": s.subject,
+                "date": s.date.isoformat(),
+                "start_time": s.start_time.strftime("%H:%M"),
+                "end_time": s.end_time.strftime("%H:%M"),
+            },
+            "scan_time": local_iso(r.scan_time),
+            "method": r.method,
+            "verification_method_used": r.verification_method_used,
+            "code_verified": r.code_verified,
+            "selfie": r.selfie_path is not None,
+            "latitude": r.latitude,
+            "longitude": r.longitude,
+            "ip": r.ip,
+            "isp": r.isp,
+            "city": r.city,
+            "region": r.region,
+            "country": r.country,
+            "os": r.os,
+            "browser": r.browser,
+            "browser_version": r.browser_version,
+            "device_model": r.device_model,
+            "screen": r.screen,
+            "anomaly_score": r.anomaly_score,
+            "anomaly_flags": r.anomaly_flags,
+            "reviewed": r.reviewed,
+        }
+        for r, u, s in rows
+    ]
+
+
+@router.post("/audit/records/{record_id}/review")
+def review_record(
+    record_id: int,
+    request: Request,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    record = db.get(AttendanceRecord, record_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Record not found.")
+    record.reviewed = True
+    db.commit()
+    log_action(
+        db,
+        admin,
+        "record_reviewed",
+        entity_type="attendance_record",
+        entity_id=record.id,
+        details={"student_id": record.student_id, "score": record.anomaly_score},
+        ip=request.client.host if request.client else None,
+    )
+    return {"ok": True, "id": record.id, "reviewed": True}
+
+
+@router.get("/audit/attempts")
+def audit_attempts(
+    limit: int = Query(default=100, ge=1, le=500),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Most recent check-in attempts (successes and rejections) with the reason."""
+    rows = (
+        db.execute(
+            select(AttendanceAttempt, User, AttendanceSession)
+            .join(User, AttendanceAttempt.student_id == User.id)
+            .outerjoin(AttendanceSession, AttendanceAttempt.session_id == AttendanceSession.id)
+            .order_by(AttendanceAttempt.attempted_at.desc())
+            .limit(limit)
+        )
+        .all()
+    )
+    return [
+        {
+            "id": a.id,
+            "employee": {"id": u.id, "name": u.name},
+            "session": (
+                {"id": s.id, "subject": s.subject, "date": s.date.isoformat()} if s else None
+            ),
+            "attempted_at": local_iso(a.attempted_at),
+            "outcome": a.outcome,
+            "fail_reason": a.fail_reason,
+            "method": a.method,
+            "ip": a.ip,
+            "latitude": a.latitude,
+            "longitude": a.longitude,
+        }
+        for a, u, s in rows
+    ]
+
+
+@router.get("/audit/log")
+def audit_log_view(
+    limit: int = Query(default=100, ge=1, le=500),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Recent admin/privileged actions."""
+    rows = (
+        db.execute(
+            select(AuditLog, User)
+            .outerjoin(User, AuditLog.actor_id == User.id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+        .all()
+    )
+    return [
+        {
+            "id": e.id,
+            "actor": u.name if u else None,
+            "action": e.action,
+            "entity_type": e.entity_type,
+            "entity_id": e.entity_id,
+            "details": e.details,
+            "ip": e.ip,
+            "created_at": local_iso(e.created_at),
+        }
+        for e, u in rows
+    ]
