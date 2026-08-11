@@ -17,6 +17,26 @@ const API = {
     localStorage.removeItem("att_token");
     localStorage.removeItem("att_user");
   },
+  // Best-effort device fingerprint for the "login once" binding. Exact OS /
+  // browser parsing happens server-side later; this is enough to name a phone.
+  deviceMeta() {
+    const nav = navigator;
+    const uad = nav.userAgentData;
+    const brands = uad?.brands || [];
+    return {
+      device_name: uad?.platform || nav.platform || "",
+      os: uad?.platform || "",
+      browser: brands[0]?.brand || "",
+      browser_version: brands[0]?.version || "",
+      model: uad?.mobile ? uad.model || "phone" : "desktop",
+      screen: `${window.screen.width}x${window.screen.height}`,
+      language: nav.language || nav.languages?.[0] || "",
+    };
+  },
+  async bindDevice() {
+    const data = await this.post("/api/auth/device", this.deviceMeta());
+    return data;
+  },
   async request(method, path, body) {
     const headers = { "Content-Type": "application/json" };
     if (this.token()) headers.Authorization = `Bearer ${this.token()}`;

@@ -18,6 +18,22 @@ class TokenResponse(BaseModel):
     user: dict
 
 
+class DeviceRegisterRequest(BaseModel):
+    device_name: str | None = Field(default=None, max_length=255)
+    os: str | None = Field(default=None, max_length=50)
+    os_version: str | None = Field(default=None, max_length=50)
+    browser: str | None = Field(default=None, max_length=50)
+    browser_version: str | None = Field(default=None, max_length=50)
+    model: str | None = Field(default=None, max_length=100)
+    screen: str | None = Field(default=None, max_length=30)
+    language: str | None = Field(default=None, max_length=10)
+
+
+class DeviceTokenResponse(BaseModel):
+    device_token: str
+    device_id: int
+
+
 class SessionCreateRequest(BaseModel):
     subject: str = Field(min_length=1, max_length=120)
     faculty: str = Field(min_length=1, max_length=120)

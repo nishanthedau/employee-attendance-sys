@@ -1,5 +1,6 @@
 """Authentication: opaque bearer tokens stored in the auth_tokens table."""
 
+import hashlib
 import secrets
 from datetime import timedelta
 
@@ -8,9 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.time import now
-from app.models.entities import AuthToken, Role, User
+from app.models.entities import AuthToken, DeviceRegistration, Role, User
 
 TOKEN_TTL_HOURS = 12
+
+# Device "login once" tokens never expire by design; a re-auth only happens
+# after an admin revokes the device. We still refresh last_seen_at, but at most
+# every few minutes to keep request churn low.
+LAST_SEEN_REFRESH_SECONDS = 300
 
 
 class AuthError(Exception):
@@ -66,13 +72,61 @@ def authenticate(db: Session, email: str, password: str) -> User:
 
 
 def get_user_by_token(db: Session, token: str) -> User | None:
-    record = (
+    auth = (
         db.execute(
             select(AuthToken).where(AuthToken.token == token, AuthToken.expires_at > now())
         )
         .scalar_one_or_none()
     )
-    return record.user if record else None
+    if auth:
+        return auth.user
+
+    device = (
+        db.execute(
+            select(DeviceRegistration).where(
+                DeviceRegistration.token_hash == hash_token(token),
+                DeviceRegistration.is_active.is_(True),
+            )
+        )
+        .scalar_one_or_none()
+    )
+    if device:
+        if (
+            device.last_seen_at is None
+            or (now() - device.last_seen_at).total_seconds() > LAST_SEEN_REFRESH_SECONDS
+        ):
+            device.last_seen_at = now()
+            db.commit()
+        return device.user
+    return None
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def register_device(db: Session, user: User, meta: dict, ip: str | None) -> tuple[str, DeviceRegistration]:
+    """Bind a new device to a user, returning (plaintext token, device row)."""
+    token = secrets.token_hex(32)
+    device = DeviceRegistration(
+        user_id=user.id,
+        token_hash=hash_token(token),
+        device_name=(meta.get("device_name") or "")[:255] or None,
+        os=(meta.get("os") or "")[:50] or None,
+        os_version=(meta.get("os_version") or "")[:50] or None,
+        browser=(meta.get("browser") or "")[:50] or None,
+        browser_version=(meta.get("browser_version") or "")[:50] or None,
+        model=(meta.get("model") or "")[:100] or None,
+        screen=(meta.get("screen") or "")[:30] or None,
+        language=(meta.get("language") or "")[:10] or None,
+        ip=ip,
+        last_seen_at=now(),
+        is_active=True,
+    )
+    db.add(device)
+    db.commit()
+    db.refresh(device)
+    return token, device
 
 
 def revoke_token(db: Session, token: str) -> None:

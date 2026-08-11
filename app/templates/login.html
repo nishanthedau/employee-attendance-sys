@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign in · Attendance</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/css/app.css?v=3" />
+  <link rel="stylesheet" href="/static/css/app.css?v=4" />
 </head>
 <body>
   <div class="auth">
@@ -54,7 +54,7 @@
     </section>
   </div>
 
-  <script src="/static/js/api.js?v=3"></script>
+  <script src="/static/js/api.js?v=4"></script>
   <script>
     if (API.token() && API.user()) {
       window.location.href = API.user().role === "admin" ? "/admin" : "/student";
@@ -74,7 +74,18 @@
           email: document.getElementById("email").value.trim(),
           password: document.getElementById("password").value,
         });
-        API.setSession(data.token, data.user);
+        if (data.user.role === "student") {
+          // Employees log in once: swap the short-lived token for a permanent
+          // device token, so the next launch skips this screen entirely.
+          try {
+            const bound = await API.bindDevice();
+            API.setSession(bound.device_token, data.user);
+          } catch {
+            API.setSession(data.token, data.user);
+          }
+        } else {
+          API.setSession(data.token, data.user);
+        }
         window.location.href = data.user.role === "admin" ? "/admin" : "/student";
       } catch (err) {
         showAlert(alertEl, "err", err.message);
