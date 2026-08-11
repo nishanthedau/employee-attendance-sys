@@ -148,3 +148,86 @@ def test_geofence_live_returns_sessions_scans_rejections(client, db_session, tmp
 def test_geofence_live_requires_admin(client, db_session):
     sh = _auth(client, db_session, "stu@a.com", Role.student)
     assert client.get("/api/admin/geofence/live", headers=sh).status_code == 403
+
+
+# ---------- Phase 8b: audit-log coverage per action ----------
+
+
+def _log(client, ah):
+    return client.get("/api/admin/audit/log", headers=ah).json()
+
+
+def test_audit_log_settings_updated(client, db_session):
+    ah = _auth(client, db_session, "admin@a.com")
+    client.put(
+        "/api/admin/settings",
+        headers=ah,
+        json={"verification_mode": "code", "default_radius_meters": 120},
+    )
+    assert any(e["action"] == "settings_updated" for e in _log(client, ah))
+
+
+def test_audit_log_code_assigned_and_reassigned(client, db_session):
+    ah = _auth(client, db_session, "admin@a.com")
+    from app.models.entities import User
+
+    _auth(client, db_session, "stu@a.com", Role.student)
+    student = db_session.query(User).filter(User.email == "stu@a.com").one()
+    client.put(f"/api/admin/students/{student.id}/code", headers=ah, json={"code": "1111"})
+    client.put(f"/api/admin/students/{student.id}/code", headers=ah, json={"code": "2222"})
+    entries = [e for e in _log(client, ah) if e["action"] == "code_assigned"]
+    assert len(entries) == 2
+    assert entries[0]["entity_id"] == student.id
+    assert entries[0]["details"]["reassigned"] is True  # newest first: regeneration
+    assert entries[1]["details"]["reassigned"] is False  # first assignment
+
+
+def test_audit_log_code_viewed(client, db_session):
+    ah = _auth(client, db_session, "admin@a.com")
+    from app.models.entities import User
+
+    _auth(client, db_session, "stu@a.com", Role.student)
+    student = db_session.query(User).filter(User.email == "stu@a.com").one()
+    client.put(f"/api/admin/students/{student.id}/code", headers=ah, json={"code": "1111"})
+    client.get(f"/api/admin/students/{student.id}/code", headers=ah)
+    assert any(e["action"] == "code_viewed" for e in _log(client, ah))
+
+
+def test_audit_log_device_revoked(client, db_session):
+    ah = _auth(client, db_session, "admin@a.com")
+    sh = _auth(client, db_session, "stu@a.com", Role.student)
+    bound = client.post("/api/auth/device", headers=sh, json={"device_name": "iPhone"}).json()
+    client.delete(f"/api/admin/devices/{bound['device_id']}", headers=ah)
+    entries = [e for e in _log(client, ah) if e["action"] == "device_revoked"]
+    assert len(entries) == 1
+    assert entries[0]["entity_id"] == bound["device_id"]
+
+
+def test_audit_log_record_reviewed(client, db_session, tmp_selfie_storage):
+    ah = _auth(client, db_session, "admin@a.com")
+    sh = _auth(client, db_session, "stu@a.com", Role.student)
+    session = _session(client, ah)
+    from app.models.entities import AttendanceSession
+
+    token = db_session.get(AttendanceSession, session["id"]).qr_token
+    assert _scan(client, sh, session["id"], token).status_code == 200
+    record_id = client.get("/api/admin/audit/records", headers=ah).json()[0]["id"]
+    client.post(f"/api/admin/audit/records/{record_id}/review", headers=ah)
+    entries = [e for e in _log(client, ah) if e["action"] == "record_reviewed"]
+    assert len(entries) == 1
+    assert entries[0]["entity_id"] == record_id
+
+
+def test_audit_log_selfie_viewed(client, db_session, tmp_selfie_storage):
+    ah = _auth(client, db_session, "admin@a.com")
+    sh = _auth(client, db_session, "stu@a.com", Role.student)
+    session = _session(client, ah)
+    from app.models.entities import AttendanceSession
+
+    token = db_session.get(AttendanceSession, session["id"]).qr_token
+    assert _scan(client, sh, session["id"], token).status_code == 200
+    record_id = client.get("/api/admin/audit/records", headers=ah).json()[0]["id"]
+    client.get(f"/api/admin/selfie/{record_id}", headers=ah)
+    entries = [e for e in _log(client, ah) if e["action"] == "selfie_viewed"]
+    assert len(entries) == 1
+    assert entries[0]["entity_id"] == record_id

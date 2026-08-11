@@ -111,6 +111,7 @@ def get_qr(session_id: int = Query(...), admin: User = Depends(require_admin), d
 @router.get("/selfie/{record_id}")
 def get_selfie(
     record_id: int,
+    request: Request,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -120,6 +121,15 @@ def get_selfie(
     path = selfie_path(record.selfie_path)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Selfie file is missing.")
+    log_action(
+        db,
+        admin,
+        "selfie_viewed",
+        entity_type="attendance_record",
+        entity_id=record.id,
+        details={"student_id": record.student_id, "session_id": record.session_id},
+        ip=request.client.host if request.client else None,
+    )
     media_type = "image/png" if record.selfie_path.endswith(".png") else "image/jpeg"
     return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-store"})
 
@@ -427,6 +437,7 @@ def assign_code(
     if not user or user.role != Role.student:
         raise HTTPException(status_code=404, detail="Employee not found.")
     code = _normalize_code(payload.code)
+    was_assigned = user.verification_code is not None
     user.verification_code = encrypt_code(code)
     user.verification_code_assigned_at = now()
     db.commit()
@@ -436,7 +447,7 @@ def assign_code(
         "code_assigned",
         entity_type="user",
         entity_id=user.id,
-        details={"reassigned": user.verification_code_assigned_at is not None},
+        details={"reassigned": was_assigned},
         ip=request.client.host if request.client else None,
     )
     return {"id": user.id, "code": code}
