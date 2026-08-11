@@ -11,8 +11,10 @@ from app.api.deps import (
 from app.core.storage import delete_selfie, save_selfie
 from app.core.time import now
 from app.db.database import get_db
-from app.models.entities import AttendanceSession, User
+from app.models.entities import AttendanceRecord, AttendanceSession, User
 from app.services.analytics_service import current_week
+from app.services.anomaly_service import assess
+from app.services.geoip_service import enrich as geoip_enrich
 from app.services.session_service import (
     SessionError,
     check_verification,
@@ -27,13 +29,59 @@ from app.services.session_service import (
 router = APIRouter(prefix="/api/student", tags=["student"])
 
 
-def _request_enrichment(request: Request, device) -> dict:
-    """Pull the pieces record_scan uses to enrich the audit columns."""
-    return {
-        "client_ip": request.client.host if request.client else None,
-        "user_agent": request.headers.get("user-agent"),
-        "device": device,
-    }
+def _finalize_record(
+    db: Session,
+    session: AttendanceSession,
+    student: User,
+    latitude: float | None,
+    longitude: float | None,
+    filename: str | None,
+    start,
+    *,
+    method: str,
+    verification_method_used: str,
+    code_verified: bool | None,
+    device,
+    request: Request,
+) -> AttendanceRecord:
+    """Persist the record with GeoLite2 enrichment and anomaly scoring.
+
+    Runs after all checks pass, so a rejected scan never writes a record. The
+    anomaly score is informational only (the audit trail, reviewed by the admin).
+    """
+    client_ip = request.client.host if request.client else None
+    geo = geoip_enrich(client_ip) if client_ip else {}
+    anomaly_score, anomaly_flags = assess(
+        db,
+        student_id=student.id,
+        session_lat=session.latitude,
+        session_lng=session.longitude,
+        radius_meters=session.radius_meters,
+        scan_lat=latitude,
+        scan_lng=longitude,
+        scan_time=start,
+        device_id=device.id if device else None,
+        country=geo.get("country"),
+    )
+    return record_scan(
+        db,
+        session,
+        student,
+        latitude,
+        longitude,
+        filename,
+        start,
+        method=method,
+        verification_method_used=verification_method_used,
+        code_verified=code_verified,
+        device_id=device.id if device else None,
+        client_ip=client_ip,
+        user_agent=request.headers.get("user-agent"),
+        device=device,
+        geo=geo,
+        anomaly_score=anomaly_score,
+        anomaly_flags=anomaly_flags,
+    )
 
 
 @router.get("/settings")
@@ -111,7 +159,7 @@ def mark_by_selfie(
         raise
     filename = save_selfie(selfie) if selfie else None
     try:
-        record = record_scan(
+        record = _finalize_record(
             db,
             session,
             student,
@@ -122,8 +170,8 @@ def mark_by_selfie(
             method="selfie",
             verification_method_used=verification_method_used,
             code_verified=code_verified,
-            device_id=device.id if device else None,
-            **_request_enrichment(request, device),
+            device=device,
+            request=request,
         )
     except Exception:
         if filename:
@@ -199,7 +247,7 @@ def scan(
         raise
     filename = save_selfie(selfie) if selfie else None
     try:
-        record = record_scan(
+        record = _finalize_record(
             db,
             session,
             student,
@@ -210,8 +258,8 @@ def scan(
             method="scan",
             verification_method_used=verification_method_used,
             code_verified=code_verified,
-            device_id=device.id if device else None,
-            **_request_enrichment(request, device),
+            device=device,
+            request=request,
         )
     except Exception:
         if filename:

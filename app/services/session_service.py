@@ -199,6 +199,10 @@ def record_scan(
     client_ip: str | None = None,
     user_agent: str | None = None,
     device: DeviceRegistration | None = None,
+    geo: dict | None = None,
+    ua: dict | None = None,
+    anomaly_score: int = 0,
+    anomaly_flags: dict | None = None,
 ) -> AttendanceRecord:
     """Persist an already-validated scan. The unique (student, session)
     constraint is the race-condition backstop for concurrent duplicate scans.
@@ -206,10 +210,12 @@ def record_scan(
     The record is enriched with the client IP's GeoLite2 location (ISP, city,
     region, country) and a server-side parse of the User-Agent (OS, browser,
     device model). Screen size is copied from the bound device when present.
+    Enrichment and anomaly results may be precomputed by the caller to avoid a
+    double GeoLite2 lookup.
     """
     now = now or datetime.now()
-    geo = geoip_enrich(client_ip)
-    ua = parse_ua(user_agent)
+    geo = geo if geo is not None else geoip_enrich(client_ip)
+    ua = ua if ua is not None else parse_ua(user_agent)
     record = AttendanceRecord(
         student_id=student.id,
         session_id=session.id,
@@ -233,6 +239,8 @@ def record_scan(
         device_model=ua["device_model"] or (device.model if device else None),
         network_type=None,
         screen=device.screen if device else None,
+        anomaly_score=anomaly_score,
+        anomaly_flags=anomaly_flags,
     )
     db.add(record)
     try:
