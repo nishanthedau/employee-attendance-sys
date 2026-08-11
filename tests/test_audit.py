@@ -123,3 +123,28 @@ def test_audit_requires_admin(client, db_session):
     sh = _auth(client, db_session, "stu@a.com", Role.student)
     res = client.get("/api/admin/audit/records", headers=sh)
     assert res.status_code == 403
+
+
+def test_geofence_live_returns_sessions_scans_rejections(client, db_session, tmp_selfie_storage):
+    ah = _auth(client, db_session, "admin@a.com")
+    sh = _auth(client, db_session, "stu@a.com", Role.student)
+    session = _session(client, ah)
+    from app.models.entities import AttendanceSession
+
+    token = db_session.get(AttendanceSession, session["id"]).qr_token
+    far = 28.6139 + 0.01
+    assert _scan(client, sh, session["id"], token, lat=far).status_code == 400
+    assert _scan(client, sh, session["id"], token).status_code == 200
+
+    data = client.get("/api/admin/geofence/live", headers=ah).json()
+    assert data["sessions"]
+    assert data["sessions"][0]["id"] == session["id"]
+    assert data["sessions"][0]["radius_meters"] == 75
+    assert data["scans"] and data["scans"][0]["employee"] == "Someone"
+    assert data["scans"][0]["anomaly_score"] == 0
+    assert data["rejections"] and data["rejections"][0]["reason"] == "outside_zone"
+
+
+def test_geofence_live_requires_admin(client, db_session):
+    sh = _auth(client, db_session, "stu@a.com", Role.student)
+    assert client.get("/api/admin/geofence/live", headers=sh).status_code == 403

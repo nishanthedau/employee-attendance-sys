@@ -1,6 +1,6 @@
 import re
 import secrets
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
@@ -127,6 +127,101 @@ def get_selfie(
 @router.get("/dashboard")
 def dashboard(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     return dashboard_stats(db)
+
+
+@router.get("/geofence/live")
+def geofence_live(
+    minutes: int = Query(default=60, ge=1, le=1440),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Live cockpit: today's geofences + recent scan/rejection markers for the map."""
+    current = now()
+    today = current.date()
+    cutoff = current - timedelta(minutes=minutes)
+
+    active = []
+    sessions = db.execute(
+        select(AttendanceSession)
+        .where(AttendanceSession.date == today)
+        .order_by(AttendanceSession.start_time)
+    ).scalars().all()
+    for s in sessions:
+        live, _ = markable_state(s, current)
+        active.append(
+            {
+                "id": s.id,
+                "subject": s.subject,
+                "faculty": s.faculty,
+                "start_time": s.start_time.strftime("%H:%M"),
+                "end_time": s.end_time.strftime("%H:%M"),
+                "latitude": s.latitude,
+                "longitude": s.longitude,
+                "radius_meters": s.radius_meters,
+                "marked": len(s.records),
+                "live": live,
+            }
+        )
+
+    records = db.execute(
+        select(User, AttendanceRecord, AttendanceSession)
+        .join(AttendanceRecord.student)
+        .join(AttendanceRecord.session)
+        .where(
+            AttendanceRecord.scan_time >= cutoff,
+            AttendanceRecord.latitude.isnot(None),
+            AttendanceRecord.longitude.isnot(None),
+        )
+        .order_by(AttendanceRecord.scan_time.desc())
+        .limit(100)
+    ).all()
+    scans = [
+        {
+            "id": r.id,
+            "employee": u.name,
+            "email": u.email,
+            "session_id": s.id,
+            "session_subject": s.subject,
+            "scan_time": local_iso(r.scan_time),
+            "latitude": r.latitude,
+            "longitude": r.longitude,
+            "anomaly_score": r.anomaly_score,
+            "flags": r.anomaly_flags or {},
+            "os": r.os,
+        }
+        for u, r, s in records
+    ]
+
+    attempts = db.execute(
+        select(User, AttendanceAttempt)
+        .join(AttendanceAttempt.student)
+        .where(
+            AttendanceAttempt.attempted_at >= cutoff,
+            AttendanceAttempt.latitude.isnot(None),
+            AttendanceAttempt.longitude.isnot(None),
+            AttendanceAttempt.outcome == "failure",
+        )
+        .order_by(AttendanceAttempt.attempted_at.desc())
+        .limit(100)
+    ).all()
+    rejections = [
+        {
+            "id": a.id,
+            "employee": u.name,
+            "reason": a.fail_reason,
+            "attempted_at": local_iso(a.attempted_at),
+            "latitude": a.latitude,
+            "longitude": a.longitude,
+        }
+        for u, a in attempts
+    ]
+
+    return {
+        "sessions": active,
+        "scans": scans,
+        "rejections": rejections,
+        "cutoff_minutes": minutes,
+    }
 
 
 @router.get("/sessions")

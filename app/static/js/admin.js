@@ -335,6 +335,93 @@ function viewSelfie(recordId, name) {
   }).catch((e) => showToast(e.message, "err"));
 }
 
+// ---------- Geofence map ----------
+let geofenceMap = null;
+let geofenceLayer = null;
+
+function initGeofenceMap() {
+  if (geofenceMap || typeof L === "undefined") return;
+  geofenceMap = L.map("geofence-map", { zoomControl: true }).setView([20, 78], 5);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(geofenceMap);
+  geofenceLayer = L.layerGroup().addTo(geofenceMap);
+}
+
+function scoreColor(score) {
+  if (score <= 0) return "#22c55e";
+  if (score < 40) return "#f59e0b";
+  return "#ef4444";
+}
+
+async function loadGeofence() {
+  initGeofenceMap();
+  const status = document.getElementById("geofence-status");
+  try {
+    const data = await API.get("/api/admin/geofence/live");
+    const n = (x) => (x === 1 ? "" : "s");
+    status.textContent = `Last ${data.cutoff_minutes} min · ${data.sessions.length} session${n(data.sessions.length)} · ${data.scans.length} scan${n(data.scans.length)} · ${data.rejections.length} rejection${n(data.rejections.length)}`;
+    if (!geofenceMap) {
+      status.textContent = "Map library blocked — geofence disabled (check network/CDN)";
+      return;
+    }
+    geofenceLayer.clearLayers();
+    const bounds = [];
+    for (const s of data.sessions) {
+      const circle = L.circle([s.latitude, s.longitude], {
+        radius: s.radius_meters,
+        color: s.live ? "#6366f1" : "#9ca3af",
+        weight: 1.5,
+        fillColor: s.live ? "#6366f1" : "#9ca3af",
+        fillOpacity: s.live ? 0.12 : 0.05,
+      }).addTo(geofenceLayer);
+      circle.bindPopup(
+        `<h4>${esc(s.subject)}</h4><span class="lbl">${esc(s.faculty)}</span><br>` +
+          `${esc(s.start_time)}–${esc(s.end_time)} · ${s.marked} marked<br>${s.live ? "● Live" : "Closed"}`
+      );
+      bounds.push([s.latitude, s.longitude]);
+    }
+    for (const r of data.scans) {
+      const color = scoreColor(r.anomaly_score);
+      const icon = L.divIcon({
+        className: "",
+        html: `<div style="width:16px;height:16px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
+      });
+      const m = L.marker([r.latitude, r.longitude], { icon }).addTo(geofenceLayer);
+      const flags = Object.keys(r.flags).length
+        ? Object.entries(r.flags).map(([k, v]) => `${k}: ${esc(v)}`).join("<br>")
+        : "—";
+      const scoreCls = r.anomaly_score <= 0 ? "ok" : r.anomaly_score < 40 ? "warn" : "";
+      m.bindPopup(
+        `<h4>${esc(r.employee)}</h4><span class="lbl">${esc(r.session_subject)}</span><br>` +
+          `${esc(r.scan_time)}${r.os ? " · " + esc(r.os) : ""}<br>` +
+          `Anomaly: <b class="score ${scoreCls}">${r.anomaly_score}</b><br><span class="lbl">${flags}</span>`
+      );
+      bounds.push([r.latitude, r.longitude]);
+    }
+    for (const a of data.rejections) {
+      const icon = L.divIcon({
+        className: "",
+        html: `<div style="width:14px;height:14px;border-radius:50%;background:transparent;border:2px solid #ef4444;color:#ef4444;font-weight:800;font-size:10px;line-height:12px;text-align:center;">✕</div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      });
+      const m = L.marker([a.latitude, a.longitude], { icon }).addTo(geofenceLayer);
+      m.bindPopup(
+        `<h4>${esc(a.employee)}</h4><span class="lbl">Rejected</span><br>${esc(a.reason || "—")}<br>${esc(a.attempted_at)}`
+      );
+      bounds.push([a.latitude, a.longitude]);
+    }
+    if (bounds.length) geofenceMap.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
+    else geofenceMap.setView([20, 78], 5);
+  } catch (err) {
+    status.textContent = "Geofence data unavailable";
+  }
+}
+
 // ---------- Audit ----------
 function scorePill(score) {
   if (score <= 0) return `<span class="pill ok">0</span>`;
@@ -492,7 +579,7 @@ document.getElementById("refresh-btn").addEventListener("click", async (ev) => {
   const btn = ev.currentTarget;
   btn.disabled = true;
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity(), loadGeofence()]);
     showToast("Refreshed", "ok");
   } catch (err) {
     showToast(err.message, "err");
@@ -506,6 +593,7 @@ document.getElementById("filter-btn").addEventListener("click", loadSessions);
 document.getElementById("audit-refresh-btn").addEventListener("click", () =>
   Promise.all([loadAudit(), loadAttempts(), loadActivity()])
 );
+document.getElementById("geofence-refresh-btn").addEventListener("click", loadGeofence);
 ["audit-flagged", "audit-unreviewed"].forEach((id) =>
   document.getElementById(id).addEventListener("change", loadAudit)
 );
@@ -541,8 +629,10 @@ document.getElementById("student-search").addEventListener("input", debounce(loa
 (async () => {
   await guard();
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity(), loadGeofence()]);
   } catch (err) {
     showToast(err.message, "err");
   }
 })();
+
+setInterval(loadGeofence, 30000);
