@@ -291,6 +291,10 @@ def history(
         .where(AttendanceRecord.session_id == session.id)
         .order_by(AttendanceRecord.scan_time)
     ).all()
+    marked_ids = {u.id for u, _ in records}
+    enrolled = db.execute(
+        select(User).where(User.role == Role.student).order_by(User.name)
+    ).scalars().all()
     return {
         "session": {
             "id": session.id,
@@ -299,6 +303,13 @@ def history(
             "date": session.date.isoformat(),
         },
         "marked": len(records),
+        "enrolled": len(enrolled),
+        "absent_count": len(enrolled) - len(records),
+        "absent": [
+            {"id": u.id, "name": u.name, "email": u.email}
+            for u in enrolled
+            if u.id not in marked_ids
+        ],
         "records": [
             {
                 "id": r.id,

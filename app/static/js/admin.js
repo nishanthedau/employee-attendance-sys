@@ -300,7 +300,7 @@ function showQr(id, subject) {
 function showHistory(id) {
   API.get(`/api/admin/attendance/history?session_id=${id}`).then((data) => {
     document.getElementById("history-title").textContent = `${data.session.subject} · ${data.session.faculty}`;
-    document.getElementById("history-count").textContent = `${data.marked} marked`;
+    document.getElementById("history-count").textContent = `${data.marked} marked · ${data.absent_count} absent of ${data.enrolled}`;
     const body = document.getElementById("history-body");
     body.innerHTML = data.records.length
       ? ""
@@ -317,6 +317,16 @@ function showHistory(id) {
           <td><span class="pill ok">${r.status}</span></td>
           <td>${selfie}</td>
         </tr>`
+      );
+    }
+    const absentBody = document.getElementById("history-absent-body");
+    absentBody.innerHTML = data.absent.length
+      ? ""
+      : `<tr><td colspan="2" class="center muted">Everyone is present</td></tr>`;
+    for (const a of data.absent) {
+      absentBody.insertAdjacentHTML(
+        "beforeend",
+        `<tr><td style="font-weight:600;">${esc(a.name)}</td><td class="muted small">${esc(a.email)}</td></tr>`
       );
     }
     document.getElementById("history-qr-btn").onclick = () => showQr(id, data.session.subject);
