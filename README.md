@@ -75,6 +75,10 @@ attendance-system/
 | `POST /api/admin/students`            | admin   | add employee (409 on duplicate)     |
 | `DELETE /api/admin/students/{id}`     | admin   | remove employee + records           |
 | `GET  /api/admin/selfie/{record_id}`  | admin   | employee selfie image (PNG/JPEG)    |
+| `GET  /api/admin/settings`            | admin   | org settings (mode, radius, sheets toggle) |
+| `PUT  /api/admin/settings`            | admin   | update org settings                |
+| `GET  /api/admin/sheets/queue`        | admin   | pending Google Sheets sync queue   |
+| `POST /api/admin/sheets/sync`         | admin   | drain the Sheets queue (optional `session_id`) |
 | `POST /api/student/attendance/scan`   | student | multipart: session_id, qr_token, latitude, longitude, selfie |
 | `GET  /api/student/attendance/current-week` | student | Mon–Sun this week only     |
 

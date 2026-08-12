@@ -25,6 +25,20 @@ from app.services.settings_service import get_org_settings
 from app.services.ua_service import parse_ua
 
 
+def _enqueue_sheets_sync(db: Session, session_id: int) -> None:
+    """Mirror a newly-marked session to Google Sheets when enabled.
+
+    Enqueue failures never fail the scan — the queue drains later via the worker.
+    """
+    try:
+        if get_org_settings(db).sheets_enabled:
+            from app.services.sheets_service import enqueue_sync
+
+            enqueue_sync(db, session_id)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class SessionError(Exception):
     def __init__(self, message: str, status_code: int = 400, code: str = "session_error"):
         self.message = message
@@ -252,6 +266,7 @@ def record_scan(
             "You've already marked attendance for this session.", status_code=409, code="already_marked"
         ) from None
     db.refresh(record)
+    _enqueue_sheets_sync(db, record.session_id)
     return record
 
 

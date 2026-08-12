@@ -169,6 +169,7 @@ async function loadSettings() {
     const s = await API.get("/api/admin/settings");
     document.getElementById("settings-mode").value = s.verification_mode;
     document.getElementById("settings-radius").value = s.default_radius_meters;
+    document.getElementById("settings-sheets").checked = !!s.sheets_enabled;
   } catch {}
 }
 
@@ -181,12 +182,48 @@ async function saveSettings() {
     await API.put("/api/admin/settings", {
       verification_mode: document.getElementById("settings-mode").value,
       default_radius_meters: parseInt(document.getElementById("settings-radius").value, 10),
+      sheets_enabled: document.getElementById("settings-sheets").checked,
     });
     showToast("Settings saved", "ok");
   } catch (err) {
     showAlert(msgEl, "err", err.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function syncSheetsNow() {
+  const btn = document.getElementById("sheets-sync-btn");
+  btn.disabled = true;
+  try {
+    const r = await API.post("/api/admin/sheets/sync");
+    const s = r.summary;
+    showToast(`Sheets: ${s.synced} synced, ${s.retryable} retrying, ${s.failed} failed`, "ok");
+  } catch (err) {
+    showToast(err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadSheetsQueue() {
+  const body = document.getElementById("sheets-queue-body");
+  const empty = document.getElementById("sheets-queue-empty");
+  const rows = (await API.get("/api/admin/sheets/queue")).entries;
+  body.innerHTML = "";
+  empty.classList.toggle("hidden", rows.length > 0);
+  for (const e of rows) {
+    const tr = document.createElement("tr");
+    const statusBadge = `<span class="pill ${e.status === "synced" ? "ok" : e.status === "failed" ? "err" : "off"}">${esc(e.status)}</span>`;
+    tr.innerHTML = [
+      `<td>${esc(e.subject)}</td>`,
+      `<td>${fmtDate(e.date)}</td>`,
+      `<td>${statusBadge}</td>`,
+      `<td>${e.attempts}</td>`,
+      `<td>${e.next_attempt_at ? new Date(e.next_attempt_at).toLocaleString("en-IN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</td>`,
+      `<td class="faint small">${esc(e.last_error || "—")}</td>`,
+    ].join("");
+    body.appendChild(tr);
   }
 }
 
@@ -585,11 +622,13 @@ function debounce(fn, ms) {
 
 document.getElementById("create-btn").addEventListener("click", openDrawer);
 document.getElementById("save-settings-btn").addEventListener("click", saveSettings);
+document.getElementById("sheets-sync-btn").addEventListener("click", syncSheetsNow);
+document.getElementById("sheets-queue-refresh-btn").addEventListener("click", loadSheetsQueue);
 document.getElementById("refresh-btn").addEventListener("click", async (ev) => {
   const btn = ev.currentTarget;
   btn.disabled = true;
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity(), loadGeofence()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity(), loadGeofence(), loadSheetsQueue()]);
     showToast("Refreshed", "ok");
   } catch (err) {
     showToast(err.message, "err");
@@ -639,7 +678,7 @@ document.getElementById("student-search").addEventListener("input", debounce(loa
 (async () => {
   await guard();
   try {
-    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity(), loadGeofence()]);
+    await Promise.all([loadStats(), loadSessions(), loadSubjects(), loadFaculties(), loadStudents(), loadSettings(), loadAudit(), loadAttempts(), loadActivity(), loadGeofence(), loadSheetsQueue()]);
   } catch (err) {
     showToast(err.message, "err");
   }

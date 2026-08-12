@@ -25,6 +25,7 @@ from app.models.entities import (
     AuditLog,
     DeviceRegistration,
     Role,
+    SheetsSync,
     User,
 )
 from app.services.analytics_service import dashboard_stats, export_csv, faculty_options, subject_options
@@ -34,6 +35,7 @@ from app.services.code_service import decrypt_code, encrypt_code
 from app.services.qr_service import render_session_qr
 from app.services.session_service import CreateSessionData, markable_state, validate_and_create
 from app.services.settings_service import get_org_settings, update_org_settings
+from app.services.sheets_service import enqueue_sync, sync_pending
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -425,6 +427,60 @@ def update_settings(
         "selfie_retention_days": updated.selfie_retention_days,
         "sheets_enabled": updated.sheets_enabled,
     }
+
+
+# ---------- Google Sheets mirror ----------
+
+
+@router.get("/sheets/queue")
+def sheets_queue(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Pending mirror queue (sessions not yet pushed to Sheets)."""
+    rows = db.execute(
+        select(SheetsSync, AttendanceSession)
+        .join(AttendanceSession, SheetsSync.session_id == AttendanceSession.id)
+        .order_by(SheetsSync.created_at)
+    ).all()
+    return {
+        "entries": [
+            {
+                "id": sync.id,
+                "session_id": session.id,
+                "subject": session.subject,
+                "date": session.date.isoformat(),
+                "status": sync.status,
+                "attempts": sync.attempts,
+                "next_attempt_at": local_iso(sync.next_attempt_at) if sync.next_attempt_at else None,
+                "last_error": sync.last_error,
+            }
+            for sync, session in rows
+        ]
+    }
+
+
+@router.post("/sheets/sync")
+def sheets_sync_now(
+    request: Request,
+    session_id: int | None = Query(default=None),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Manual / session-end sync: drain the queue (or re-queue one session)."""
+    if session_id is not None:
+        session = db.get(AttendanceSession, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        enqueue_sync(db, session_id)
+    summary = sync_pending(db)
+    log_action(
+        db,
+        admin,
+        "sheets_synced",
+        entity_type="org_settings",
+        entity_id=1,
+        details={"queued": summary["queued"], "synced": summary["synced"]},
+        ip=request.client.host if request.client else None,
+    )
+    return {"summary": summary}
 
 
 def _normalize_code(raw: str | None) -> str:

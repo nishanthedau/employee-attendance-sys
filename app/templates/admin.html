@@ -58,7 +58,10 @@
     <div class="card">
       <div class="card-head">
         <h3>Check-in Settings</h3>
-        <button class="btn ghost sm" id="save-settings-btn">Save</button>
+        <div class="toolbar">
+          <button class="btn ghost sm" id="sheets-sync-btn">Sync Sheets now</button>
+          <button class="btn ghost sm" id="save-settings-btn">Save</button>
+        </div>
       </div>
       <div class="card-body">
         <div id="settings-msg" class="alert err hidden"></div>
@@ -76,9 +79,30 @@
             <label class="form-label">Default radius (m)</label>
             <input class="input" id="settings-radius" type="number" min="1" style="width: 100%;" />
           </div>
+          <div class="form-group">
+            <label class="check" style="margin-top: 22px;"><input type="checkbox" id="settings-sheets" /> Mirror to Google Sheets</label>
+          </div>
         </div>
         <p class="faint small mt-8">Codes are assigned per employee below. Employees outside the radius are blocked; missing GPS is skipped.</p>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Sheets Mirror</h3>
+        <div class="toolbar">
+          <button class="btn ghost sm" id="sheets-queue-refresh-btn">Refresh</button>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height: 260px; overflow-y: auto;">
+        <table class="table">
+          <thead><tr>
+            <th>Session</th><th>Date</th><th>Status</th><th>Attempts</th><th>Next retry</th><th>Last error</th>
+          </tr></thead>
+          <tbody id="sheets-queue-body"></tbody>
+        </table>
+      </div>
+      <p class="faint small mt-8" id="sheets-queue-empty">No sync jobs yet. Enabling the mirror queues a job for each session on its first scan.</p>
     </div>
 
     <div class="card">

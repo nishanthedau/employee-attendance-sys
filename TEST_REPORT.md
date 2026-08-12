@@ -1,6 +1,6 @@
 # Attendance System — Test Suite & Approach
 
-Consolidated record of every automated test in the project (133 tests, all passing)
+Consolidated record of every automated test in the project (156 tests, all passing)
 plus the methodology used to design them. Written for cross-verification with another
 AI model.
 
@@ -11,7 +11,7 @@ AI model.
 ## 1. How to run
 
 ```bash
-uv run pytest -q            # full suite (133 tests, ~60s)
+uv run pytest -q            # full suite (156 tests, ~80s)
 uv run pytest tests/test_api.py -q          # single file
 uv run pytest tests/test_anomaly.py -k speed # single test by keyword
 uv run ruff check app/ tests/               # lint gate
@@ -70,14 +70,17 @@ uv run ruff check app/ tests/               # lint gate
 | API end-to-end (auth, RBAC, sessions, scan, selfie, CSV, rate limits) | 45 |
 | Session lifecycle service rules | 18 |
 | Verification modes (code/selfie/both) | 14 |
+| Audit cockpit + geofence + per-action log | 14 |
 | Enrichment (UA + GeoIP) | 13 |
+| Google Sheets mirror (queue, retry/backoff, idempotency) | 9 |
 | Anomaly scoring | 8 |
-| Audit cockpit + geofence | 8 |
 | Model round-trips (v2 audit-layer models) | 8 |
+| Auth (login/logout/token) | 7 |
 | Device-bound auth | 6 |
 | Geo math | 6 |
-| Auth (login/logout/token) | 7 |
-| **Total** | **133** |
+| E2E pipeline (device metadata, country change, cockpit) | 4 |
+| Per-session present/absent reporting | 4 |
+| **Total** | **156** |
 
 ---
 
@@ -194,7 +197,7 @@ uv run ruff check app/ tests/               # lint gate
 | `test_clean_scan_scores_zero` | Baseline scan → score 0, no flags. |
 | `test_score_capped_at_100` | Stacked flags cap at 100, all flags present. |
 
-### 3.10 `tests/test_audit.py` — audit cockpit + geofence (8)
+### 3.10 `tests/test_audit.py` — audit cockpit + geofence (14)
 | Test | Verifies |
 |------|----------|
 | `test_audit_records_lists_enrichment` | Record row: employee/session joins, UA-derived `os`, anomaly 0, `reviewed=false`, method `none`. |
@@ -205,6 +208,12 @@ uv run ruff check app/ tests/               # lint gate
 | `test_audit_requires_admin` | Student → 403. |
 | `test_geofence_live_returns_sessions_scans_rejections` | Sessions w/ radius, scans w/ anomaly, rejections w/ reason. |
 | `test_geofence_live_requires_admin` | Student → 403. |
+| `test_audit_log_settings_updated` | `settings_updated` action with before/after details. |
+| `test_audit_log_code_assigned_and_reassigned` | `code_assigned` logged twice; `reassigned` flag correct per generation. |
+| `test_audit_log_code_viewed` | `code_viewed` logged on admin peek. |
+| `test_audit_log_device_revoked` | `device_revoked` with device entity id. |
+| `test_audit_log_record_reviewed` | `record_reviewed` with record entity id. |
+| `test_audit_log_selfie_viewed` | `selfie_viewed` with record entity id. |
 
 ### 3.11 `tests/test_api.py` — end-to-end API (45)
 | Test | Verifies |
@@ -255,6 +264,35 @@ uv run ruff check app/ tests/               # lint gate
 | `test_faculties_endpoint` | Distinct faculty list. |
 | `test_sessions_faculty_filter` | Session list filtered by faculty. |
 
+### 3.12 `tests/test_pipeline.py` — E2E pipeline gaps (4)
+| Test | Verifies |
+|------|----------|
+| `test_http_device_bind_persists_metadata_and_owner` | Device bind over HTTP stores metadata + owner. |
+| `test_http_scan_from_bound_device_flags_new_device_once` | First scan on a bound device → `new_device`, scored once. |
+| `test_http_country_change_flags_via_enrichment` | Country change via enrichment reaches the anomaly score over HTTP. |
+| `test_nonzero_anomaly_score_reaches_admin_cockpit` | Nonzero score surfaces in the admin audit cockpit. |
+
+### 3.13 `tests/test_reporting.py` — per-session present/absent (4)
+| Test | Verifies |
+|------|----------|
+| `test_history_lists_absent_per_session` | Enrolled vs marked; absent list excludes the one who scanned. |
+| `test_history_all_present` | Everyone scanned → `absent == []`. |
+| `test_history_requires_admin` | Student → 403. |
+| `test_csv_has_no_absent_rows` | CSV carries scan rows only; absent employees have no row. |
+
+### 3.14 `tests/test_sheets.py` — Google Sheets mirror (9)
+| Test | Verifies |
+|------|----------|
+| `test_scan_enqueues_sync_when_enabled` | Successful scan enqueues a `pending` `SheetsSync`; attendance unaffected. |
+| `test_no_queue_when_disabled` | Toggle off → no queue entry at all. |
+| `test_worker_pushes_records` | `sync_pending` pushes header + rows; status `synced`, `spreadsheet_id` set. |
+| `test_sheets_failure_keeps_attendance_and_retries` | Transport failure → record stays `present`, entry retryable with attempts + backoff. |
+| `test_retry_backoff_increases` | Consecutive failures grow `next_attempt_at` exponentially. |
+| `test_retry_does_not_duplicate_rows` | Drain re-runs and late re-queues are no-ops; sheet never gets duplicate rows. |
+| `test_manual_session_end_sync` | `POST /api/admin/sheets/sync?session_id=` drains, logs `sheets_synced`. |
+| `test_sheets_outage_does_not_affect_db` | `get_client()` outage is retryable, never fails the scan or touches the DB. |
+| `test_sync_requires_admin` | Student → 403 on sync/queue. |
+
 ---
 
 ## 4. Phase → test-file mapping
@@ -268,6 +306,9 @@ uv run ruff check app/ tests/               # lint gate
 | 5 | Anomaly scoring + audit log | `test_anomaly` |
 | 6 | Admin audit cockpit | `test_audit` (records/review/attempts/log) |
 | 7 | Live geofence map | `test_audit` (geofence/live) |
+| 8 | E2E pipeline gaps + per-action audit log | `test_pipeline`, `test_audit` (8b) |
+| 9 | Per-session present/absent reporting | `test_reporting` |
+| 10 | Google Sheets mirror (queue + worker) | `test_sheets` |
 
 ## 5. Gap notes (for cross-verification)
 
@@ -277,3 +318,8 @@ uv run ruff check app/ tests/               # lint gate
 - GeoLite2 DB presence is mocked; the suite never depends on a real `.mmdb`.
 - Timestamps use an injectable `now()` so date-window logic is deterministic.
 - Rate limits reset per-test, so 429 tests are repeatable.
+- Sheets transport lives behind a client interface (`ensure_sheet`/`push_rows`); tests
+  inject an in-memory `FakeSheets` that mirrors the real client's overwrite semantics
+  (clear-then-append), so no Google credentials are needed. Backoff timers are
+  force-expired in tests to exercise retries. No scheduler/CRON is shipped — the worker
+  is the `sync_pending` function, called on demand via the manual endpoint.
