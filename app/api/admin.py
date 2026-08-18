@@ -470,7 +470,7 @@ def sheets_sync_now(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found.")
         enqueue_sync(db, session_id)
-    summary = sync_pending(db)
+    summary = sync_pending(db, force=True)
     log_action(
         db,
         admin,

@@ -5,23 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Attendance</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="stylesheet" href="/static/css/app.css?v=4" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
 </head>
 <body>
-  <div class="auth-form" style="min-height: 100vh;">
-    <div class="auth-card center">
-      <div class="brand" style="justify-content: center;"><span class="mark"></span>Attendance<em>.</em></div>
-      <p class="muted mt-8">Redirecting…</p>
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" onclick="location.href='/'"><span class="mark"></span>Attendance<em>.</em></div>
+      <div class="top-actions">
+        <a class="btn sm ghost" href="/login" style="text-decoration: none;">Admin login</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container" style="max-width: 620px; min-height: 80vh; display: flex; flex-direction: column; justify-content: center;">
+    <div class="center" style="text-align: center;">
+      <h1 style="font-size: 28px; letter-spacing: -0.6px;">Ready to mark your attendance?</h1>
+      <p class="muted mt-8" style="font-size: 15px;">
+        Scan the QR your faculty is showing. Pick yourself, pick your status, done.
+      </p>
+
+      <button class="btn block lg" id="scan-cta" style="margin-top: 28px; font-size: 17px; padding: 16px 22px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -5px; margin-right: 8px;"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+        Click here to scan QR
+      </button>
+      <p class="faint small mt-12">Admins: use the button in the top-right to open the dashboard.</p>
     </div>
   </div>
-  <script src="/static/js/api.js?v=5"></script>
+
   <script>
-    const u = API.user();
-    if (API.token() && u) {
-      window.location.href = u.role === "admin" ? "/admin" : "/student";
-    } else {
-      window.location.href = "/login";
-    }
+    document.getElementById("scan-cta").addEventListener("click", () => (window.location.href = "/employee"));
   </script>
 </body>
 </html>

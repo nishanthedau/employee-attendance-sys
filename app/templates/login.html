@@ -45,10 +45,9 @@
           <button class="btn block lg" type="submit" id="submit-btn">Sign in</button>
         </form>
 
-        <div class="auth-divider">demo accounts</div>
+        <div class="auth-divider">demo account</div>
         <div class="flex">
           <button class="btn ghost grow" id="demo-admin">Admin</button>
-          <button class="btn ghost grow" id="demo-student">Employee</button>
         </div>
       </div>
     </section>
@@ -57,7 +56,7 @@
   <script src="/static/js/api.js?v=5"></script>
   <script>
     if (API.token() && API.user()) {
-      window.location.href = API.user().role === "admin" ? "/admin" : "/student";
+      window.location.href = API.user().role === "admin" ? "/admin" : "/employee";
     }
 
     const form = document.getElementById("login-form");
@@ -74,19 +73,8 @@
           email: document.getElementById("email").value.trim(),
           password: document.getElementById("password").value,
         });
-        if (data.user.role === "student") {
-          // Employees log in once: swap the short-lived token for a permanent
-          // device token, so the next launch skips this screen entirely.
-          try {
-            const bound = await API.bindDevice();
-            API.setSession(bound.device_token, data.user);
-          } catch {
-            API.setSession(data.token, data.user);
-          }
-        } else {
-          API.setSession(data.token, data.user);
-        }
-        window.location.href = data.user.role === "admin" ? "/admin" : "/student";
+        API.setSession(data.token, data.user);
+        window.location.href = data.user.role === "admin" ? "/admin" : "/employee";
       } catch (err) {
         showAlert(alertEl, "err", err.message);
       } finally {
@@ -100,7 +88,6 @@
       document.getElementById("password").value = password;
     };
     document.getElementById("demo-admin").addEventListener("click", () => fill("admin@company.com", "admin123"));
-    document.getElementById("demo-student").addEventListener("click", () => fill("aarav@company.com", "student123"));
   </script>
 </body>
 </html>

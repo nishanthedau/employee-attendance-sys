@@ -195,7 +195,7 @@ def test_selfie_only_unknown_session(client, db_session, tmp_selfie_storage):
     assert list(tmp_selfie_storage.glob("*")) == []
 
 
-def test_selfie_only_session_not_active(client, db_session, tmp_selfie_storage):
+def test_selfie_only_ignores_class_window(client, db_session, tmp_selfie_storage):
     admin_h = admin_token(client, db_session)
     session = create_session(client, admin_h).json()
     row = db_session.get(AttendanceSession, session["id"])
@@ -203,10 +203,9 @@ def test_selfie_only_session_not_active(client, db_session, tmp_selfie_storage):
     db_session.commit()
 
     stu_h = student_token(client, db_session)
-    res = selfie_scan(client, stu_h, session["id"])
-    assert res.status_code == 400
-    assert res.json()["code"] == "session_not_active"
-    assert list(tmp_selfie_storage.glob("*")) == []
+    res = selfie_scan(client, stu_h, session["id"], selfie=PNG)
+    assert res.status_code == 200
+    assert len(list(tmp_selfie_storage.glob("*"))) == 1
 
 
 def test_selfie_only_expired_session(client, db_session, tmp_selfie_storage):
@@ -460,7 +459,7 @@ def test_scan_unknown_session(client, db_session):
     assert res.json()["code"] == "invalid_qr"
 
 
-def test_scan_future_session_not_active(client, db_session):
+def test_scan_future_session_scannable_while_qr_valid(client, db_session):
     admin_h = admin_token(client, db_session)
     tomorrow = (date.today() + timedelta(days=1)).isoformat()
     session = create_session(client, admin_h, date=tomorrow).json()
@@ -468,8 +467,7 @@ def test_scan_future_session_not_active(client, db_session):
 
     stu_h = student_token(client, db_session)
     res = scan(client, stu_h, session["id"], token)
-    assert res.status_code == 400
-    assert res.json()["code"] == "session_not_active"
+    assert res.status_code == 200
 
 
 def test_scan_out_of_range_lat(client, db_session):

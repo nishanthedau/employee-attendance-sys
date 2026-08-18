@@ -98,19 +98,13 @@ def validate_and_create(db: Session, data: CreateSessionData, admin: User) -> At
     return session
 
 
-def is_session_active(session: AttendanceSession, now: datetime) -> bool:
-    start = datetime.combine(session.date, session.start_time)
-    end = datetime.combine(session.date, session.end_time)
-    return start <= now <= end
-
-
 def markable_state(session: AttendanceSession, when: datetime) -> tuple[bool, datetime]:
-    """Whether a session is markable right now (window active + QR not expired),
-    and the effective deadline = whichever comes first: QR expiry or the end of
-    the session window. A QR must never appear live after the class window."""
-    end = datetime.combine(session.date, session.end_time)
-    deadline = min(session.expires_at, end)
-    return is_session_active(session, when) and session.expires_at > when, deadline
+    """Whether a session is markable right now and its deadline.
+
+    Scanning is gated by the QR's own expiry only — the scheduled start/end
+    times are display info. A session is markable until its QR expires.
+    """
+    return session.expires_at > when, session.expires_at
 
 
 def validate_scan(
@@ -124,9 +118,9 @@ def validate_scan(
 ) -> AttendanceSession:
     """Run all inexpensive attendance checks *before* any selfie is persisted.
 
-    Order: QR exists/token matches → session active window → QR not expired →
-    no duplicate → GPS within radius. Returns the validated session on success,
-    raises ``SessionError`` otherwise.
+    Order: QR exists/token matches → QR not expired → no duplicate → GPS within
+    radius. Returns the validated session on success, raises ``SessionError``
+    otherwise.
     """
     now = now or datetime.now()
 
@@ -146,14 +140,10 @@ def validate_live_session(
     now: datetime,
 ) -> AttendanceSession:
     """Shared eligibility checks for QR scans *and* selfie-only marking:
-    session active window → not expired → no duplicate → GPS within radius.
-    Returns the validated session on success, raises ``SessionError`` otherwise.
+    QR not expired → no duplicate → GPS within radius. The scheduled class
+    window no longer gates scanning; the QR's expiry does. Returns the
+    validated session on success, raises ``SessionError`` otherwise.
     """
-    if not is_session_active(session, now):
-        raise SessionError(
-            "This session isn't open right now. Try again during the class time.",
-            code="session_not_active",
-        )
     if session.expires_at < now:
         raise SessionError(
             "This session is no longer open. Ask your teacher for a fresh one.", code="qr_expired"
@@ -185,16 +175,35 @@ def validate_live_session(
     return session
 
 
+def resolve_session(
+    db: Session,
+    session_id: int,
+    qr_token: str,
+    when: datetime | None = None,
+) -> AttendanceSession:
+    """Anonymous QR resolve: token must match and the QR must not be expired.
+    No identity is involved (dedup happens at mark)."""
+    when = when or datetime.now()
+    session = db.get(AttendanceSession, session_id)
+    if not session or not secrets.compare_digest(session.qr_token, qr_token):
+        raise SessionError("This QR code isn't valid for this class.", code="invalid_qr")
+    if session.expires_at < when:
+        raise SessionError(
+            "This session is no longer open. Ask your teacher for a fresh one.", code="qr_expired"
+        )
+    return session
+
+
 def live_sessions(db: Session, when: datetime | None = None) -> list[AttendanceSession]:
-    """Currently markable sessions (inside the active window and not expired),
-    newest first — used by the selfie-only flow where there is no QR token."""
+    """Currently markable sessions (QR not expired), newest first — used by the
+    selfie-only flow where there is no QR token."""
     when = when or datetime.now()
     rows = db.execute(
         select(AttendanceSession)
-        .where(AttendanceSession.date == when.date(), AttendanceSession.expires_at > when)
-        .order_by(AttendanceSession.start_time)
+        .where(AttendanceSession.expires_at > when)
+        .order_by(AttendanceSession.created_at.desc())
     ).scalars().all()
-    return [s for s in rows if is_session_active(s, when)]
+    return rows
 
 
 def record_scan(
@@ -206,6 +215,7 @@ def record_scan(
     selfie_path: str | None = None,
     now: datetime | None = None,
     *,
+    status: str = "present",
     method: str | None = None,
     verification_method_used: str | None = None,
     code_verified: bool | None = None,
@@ -238,7 +248,7 @@ def record_scan(
         latitude=lat,
         longitude=lng,
         selfie_path=selfie_path,
-        status="present",
+        status=status,
         method=method,
         verification_method_used=verification_method_used,
         code_verified=code_verified,

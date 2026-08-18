@@ -107,14 +107,20 @@ def sync_session(db: Session, sync: SheetsSync, client=None) -> SheetsSync:
     return sync
 
 
-def sync_pending(db: Session, limit: int = 50, client=None) -> dict:
-    """Process every due queue entry. Returns a small run summary."""
+def sync_pending(db: Session, limit: int = 50, client=None, *, force: bool = False) -> dict:
+    """Process every due queue entry. Returns a small run summary.
+
+    `force=True` (manual / session-end sync) drains every `pending` entry
+    regardless of its retry timer. This matters on MySQL, where `DATETIME`
+    truncates to seconds: an entry enqueued moments ago can otherwise be
+    skipped because its `next_attempt_at` is rounded up to the same second.
+    """
+    conditions = [SheetsSync.status == "pending"]
+    if not force:
+        conditions.append(SheetsSync.next_attempt_at <= now())
     due = (
         db.execute(
-            select(SheetsSync)
-            .where(SheetsSync.status == "pending", SheetsSync.next_attempt_at <= now())
-            .order_by(SheetsSync.next_attempt_at)
-            .limit(limit)
+            select(SheetsSync).where(*conditions).order_by(SheetsSync.next_attempt_at).limit(limit)
         )
         .scalars()
         .all()

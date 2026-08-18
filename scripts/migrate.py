@@ -8,6 +8,7 @@ import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pymysql
 
@@ -16,6 +17,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import get_settings
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "database" / "migrations"
+
+
+def _db_connect(settings):
+    if settings.database_url:
+        url = urlparse(settings.database_url)
+        return pymysql.connect(
+            host=url.hostname,
+            port=url.port or 3306,
+            user=url.username,
+            password=url.password or "",
+            database=url.path.lstrip("/") or None,
+            charset="utf8mb4",
+        )
+    return pymysql.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        user=settings.db_user,
+        password=settings.db_password,
+        database=settings.db_name,
+        charset="utf8mb4",
+    )
 
 
 def _load_statements(path: Path) -> list[str]:
@@ -27,14 +49,7 @@ def _load_statements(path: Path) -> list[str]:
 
 def main() -> int:
     settings = get_settings()
-    conn = pymysql.connect(
-        host=settings.db_host,
-        port=settings.db_port,
-        user=settings.db_user,
-        password=settings.db_password,
-        database=settings.db_name,
-        charset="utf8mb4",
-    )
+    conn = _db_connect(settings)
     applied: set[str] = set()
     try:
         with conn.cursor() as cur:

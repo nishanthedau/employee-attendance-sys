@@ -1,14 +1,17 @@
 import time
 from pathlib import Path
 
+import bcrypt
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin, auth, student
+from app.api import admin, auth, employee, student
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
+from app.db.database import Base, engine
+from app.models.entities import Role, User
 from app.services.auth_service import AuthError
 from app.services.session_service import SessionError
 
@@ -20,6 +23,7 @@ app = FastAPI(title="Attendance System", version="0.2.0")
 
 app.include_router(auth.router)
 app.include_router(student.router)
+app.include_router(employee.router)
 app.include_router(admin.router)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,7 +33,8 @@ PAGES: dict[str, str] = {
     "/": "index.html",
     "/login": "login.html",
     "/admin": "admin.html",
-    "/student": "student.html",
+    "/employee": "employee.html",
+    "/student": "employee.html",
 }
 
 
@@ -97,6 +102,33 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Something went wrong on our side. Please try again.", "code": "internal_error"},
     )
+
+
+@app.on_event("startup")
+def _auto_setup():
+    if settings.app_env != "production":
+        return
+    Base.metadata.create_all(bind=engine)
+    logger.info("tables ensured")
+    from sqlalchemy.orm import sessionmaker
+
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+    with Session() as db:
+        if db.query(User).first():
+            return
+        admin_pw = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode()
+        db.add(User(name="System Admin", email="admin@company.com", password_hash=admin_pw, role=Role.admin))
+        for name, email, pw in [
+            ("Aarav Sharma", "aarav@company.com", "student123"),
+            ("Priya Patel", "priya@company.com", "student123"),
+            ("Rahul Verma", "rahul@company.com", "student123"),
+            ("Sneha Iyer", "sneha@company.com", "student123"),
+            ("Vikram Singh", "vikram@company.com", "student123"),
+        ]:
+            pw_hash = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+            db.add(User(name=name, email=email, password_hash=pw_hash, role=Role.student))
+        db.commit()
+        logger.info("seeded admin + 5 students")
 
 
 @app.get("/health")

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Employee · Attendance</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <link rel="stylesheet" href="/static/css/app.css?v=6" />
+</head>
+<body>
+  <nav class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" onclick="location.href='/'"><span class="mark"></span>Attendance<em>.</em></div>
+      <div class="top-actions">
+        <a class="btn sm ghost" href="/login" style="text-decoration: none;">Admin login</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container" style="max-width: 620px;">
+    <div id="toast" class="alert hidden"></div>
+
+    <!-- Step 1: scan -->
+    <div id="scan-step">
+      <div id="scan-landing" class="center" style="text-align: center; padding: 48px 0;">
+        <h1 style="font-size: 26px; letter-spacing: -0.6px;">Ready?</h1>
+        <p class="muted mt-8" style="font-size: 15px;">Click below to open the camera and scan the class QR.</p>
+        <button class="btn block lg" id="scan-cta-btn" style="margin-top: 26px; font-size: 17px; padding: 16px 22px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -5px; margin-right: 8px;"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+          Click here to scan QR
+        </button>
+      </div>
+      <div id="scan-camera" class="hidden">
+        <div class="center" style="text-align: center; margin-bottom: 18px;">
+          <h1 style="font-size: 22px;">Point at the class QR</h1>
+          <p class="muted small mt-8">Align the QR inside the frame to continue.</p>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div id="scan-msg" class="alert hidden"></div>
+            <div class="scan-region" id="qr-reader"></div>
+            <button class="btn block ghost lg" id="scan-btn" style="margin-top: 14px;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -4px; margin-right: 8px;"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+              Re-open camera
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: who are you + status -->
+    <div id="form-step" class="hidden">
+      <div class="card">
+        <div class="card-head">
+          <h3 id="session-title">Class</h3>
+          <span class="faint small" id="session-meta"></span>
+        </div>
+        <div class="card-body">
+          <div id="form-msg" class="alert err hidden"></div>
+          <div class="form-group">
+            <label class="form-label" for="who">Who are you?</label>
+            <select class="input" id="who"><option value="">Loading employees…</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="status">Status</label>
+            <select class="input" id="status">
+              <option value="present">Present</option>
+              <option value="late">Running Late</option>
+              <option value="absent">Absent</option>
+            </select>
+          </div>
+          <p class="faint small" id="mode-hint"></p>
+          <div class="flex mt-16">
+            <button class="btn ghost grow" id="back-scan-btn">Scan again</button>
+            <button class="btn grow" id="done-btn">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: verification (selfie / code / both) -->
+    <div id="verify-step" class="hidden">
+      <div class="card">
+        <div class="card-head">
+          <h3>Confirm it's you</h3>
+          <span class="faint small" id="verify-hint"></span>
+        </div>
+        <div class="card-body">
+          <div id="verify-msg" class="alert err hidden"></div>
+          <div id="selfie-box-wrap" class="hidden">
+            <div class="selfie-box">
+              <video id="selfie-video" autoplay playsinline muted></video>
+              <canvas id="selfie-canvas" class="hidden"></canvas>
+              <img id="selfie-preview" class="hidden" alt="Your selfie" />
+            </div>
+            <div class="flex mt-16">
+              <button class="btn ghost grow hidden" id="retake-btn">Retake</button>
+              <button class="btn grow" id="capture-btn">Capture</button>
+              <button class="btn grow hidden" id="confirm-selfie-btn">Confirm selfie</button>
+            </div>
+          </div>
+          <div id="code-box-wrap" class="hidden" style="margin-top: 14px;">
+            <label class="form-label" for="verify-code">Your personal code</label>
+            <input class="input" id="verify-code" type="text" inputmode="numeric" pattern="[0-9]*"
+              autocomplete="one-time-code" placeholder="Your code" maxlength="6"
+              style="font-size: 22px; letter-spacing: 8px; text-align: center;" />
+          </div>
+          <button class="btn block lg" id="submit-mark-btn" style="margin-top: 16px;">Mark attendance</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 4: done -->
+    <div id="done-step" class="hidden">
+      <div class="card center" style="text-align: center; padding: 40px 24px;">
+        <div style="width: 64px; height: 64px; border-radius: 50%; background: var(--success); color: #fff; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 30px;">✓</div>
+        <h2 style="margin-top: 16px;" id="done-title">Marked</h2>
+        <p class="muted small" id="done-detail"></p>
+        <button class="btn block lg" id="again-btn" style="margin-top: 22px;">Scan another</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/vendor/html5-qrcode.min.js"></script>
+  <script src="/static/js/api.js?v=6"></script>
+  <script src="/static/js/employee.js?v=6"></script>
+</body>
+</html>

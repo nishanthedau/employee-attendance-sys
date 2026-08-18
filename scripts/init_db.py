@@ -32,20 +32,23 @@ STUDENTS = [
 
 
 def _create_database() -> None:
-    server_url = (
-        f"mysql+pymysql://{settings.db_user}:{settings.db_password}"
-        f"@{settings.db_host}:{settings.db_port}?charset=utf8mb4"
+    from urllib.parse import urlparse
+
+    url = urlparse(settings.resolved_database_url)
+    eng = create_engine(
+        f"mysql+pymysql://{url.username}:{url.password or ''}@{url.hostname}:{url.port or 3306}",
+        isolation_level="AUTOCOMMIT",
     )
-    eng = create_engine(server_url, isolation_level="AUTOCOMMIT")
+    db_name = url.path.lstrip("/")
     with eng.connect() as conn:
         conn.execute(
             text(
-                f"CREATE DATABASE IF NOT EXISTS `{settings.db_name}` "
+                f"CREATE DATABASE IF NOT EXISTS `{db_name}` "
                 "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
             )
         )
     eng.dispose()
-    print(f"database `{settings.db_name}` ready")
+    print(f"database `{db_name}` ready")
 
 
 def _ensure_selfie_column() -> None:

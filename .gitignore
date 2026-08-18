@@ -22,3 +22,4 @@ storage/selfies/*
 
 # macOS
 .DS_Store
+storage/

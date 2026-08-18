@@ -123,6 +123,26 @@ def test_no_queue_when_disabled(client, db_session, tmp_selfie_storage):
     assert db_session.query(SheetsSync).filter(SheetsSync.session_id == session["id"]).count() == 0
 
 
+def test_manual_sync_forces_not_yet_due_entries(client, db_session, tmp_selfie_storage):
+    """MySQL DATETIME truncates to seconds, so a freshly-enqueued entry can be
+    'not yet due'. Manual/session-end sync must drain it anyway (force=True)."""
+    _enable_sheets(db_session)
+    ah = _admin(client, db_session)
+    sh = _student(client, db_session)
+    session = _session(client, ah)
+    assert _scan(client, sh, session["id"], _token(db_session, session["id"])).status_code == 200
+
+    # Put the retry timer one second in the future — like a just-committed scan.
+    sync = _sync_for(db_session, session["id"])
+    sync.next_attempt_at = now() + timedelta(seconds=1)
+    db_session.commit()
+
+    sheets = FakeSheets()
+    assert sync_pending(db_session, client=sheets)["synced"] == 0  # not due for the worker
+    assert sync_pending(db_session, client=sheets, force=True)["synced"] == 1  # manual drains it
+    assert _sync_for(db_session, session["id"]).status == "synced"
+
+
 def test_worker_pushes_records(client, db_session, tmp_selfie_storage):
     _enable_sheets(db_session)
     ah = _admin(client, db_session)

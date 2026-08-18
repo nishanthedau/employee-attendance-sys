@@ -128,18 +128,17 @@ def test_scan_expired_qr(db_session, seeded):
     assert "no longer open" in exc.value.message
 
 
-def test_scan_session_not_active(db_session, seeded):
+def test_scan_not_gated_by_class_window(db_session, seeded):
     admin, student = seeded
+    # Window is display info now: an all-day-QR session whose scheduled window
+    # has passed is still scannable while the QR is valid.
     session = validate_and_create(
         db_session,
         session_data(start_time=time(1, 0), end_time=time(2, 0)),
         admin,
     )
-    with pytest.raises(SessionError) as exc:
-        scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
-    assert exc.value.status_code == 400
-    assert "isn't open right now" in exc.value.message
-    assert exc.value.code == "session_not_active"
+    record = scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
+    assert record.status == "present"
 
 
 def test_scan_duplicate(db_session, seeded):
@@ -164,13 +163,12 @@ def test_scan_outside_zone(db_session, seeded):
 
 def test_scan_injects_now(db_session, seeded):
     admin, student = seeded
-    # A session scheduled tomorrow is inactive today but its QR isn't expired.
+    # A session scheduled tomorrow is still scannable today while its QR is
+    # valid (expiry is the gate, not the schedule).
     session = validate_and_create(
         db_session,
         session_data(session_date=date.today() + timedelta(days=1)),
         admin,
     )
-    with pytest.raises(SessionError) as exc:
-        scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
-    assert exc.value.status_code == 400
-    assert "isn't open right now" in exc.value.message
+    record = scan_attendance(db_session, session.id, session.qr_token, student, LAT, LNG)
+    assert record.status == "present"
